@@ -24,14 +24,13 @@ pub fn get_module_base_address (module_name: &String) -> i64
         {
             handle = m.handle();
             return handle as i64;
-
         }
     }
 
     0
 }
 
-pub fn get_function_address(module_base_address: i64, function: String) -> *mut i32 {
+pub fn get_function_address(module_base_address: i64, function: String) -> i64 {
     
     let mut function_ptr:*mut i32 = ptr::null_mut();
 
@@ -83,34 +82,41 @@ pub fn get_function_address(module_base_address: i64, function: String) -> *mut 
 
         }
 
-    }
+        let mut ret: i64 = 0;
 
-    function_ptr
+        if function_ptr != ptr::null_mut()
+        {
+            ret = function_ptr as i64;
+        }
+    
+        ret
+
+    }
 }
 
-pub fn get_function_address_ordinal (module_base_address: i64, ordinal: u32) -> u64 {
+pub fn get_function_address_ordinal (module_base_address: i64, ordinal: u32) -> i64 {
    
     let ret = ldr_get_procedure_address(module_base_address, "".to_string(), ordinal);
 
     match ret {
        Ok(r) => return r,
-       Err(e) => return 0, 
+       Err(_) => return 0, 
     }
     
 }
 
-pub fn ldr_get_procedure_address (module_handle: i64, function_name: String, ordinal: u32) -> Result<u64, String> {
+pub fn ldr_get_procedure_address (module_handle: i64, function_name: String, ordinal: u32) -> Result<i64, String> {
 
     unsafe 
     {   
-        let mut result = 0;
+        let mut result: i64 = 0;
         
         let module_base_address = get_module_base_address(&lc!("ntdll.dll".to_string())); 
         if module_base_address != 0
         {
             let function_address = get_function_address(module_base_address, lc!("LdrGetProcedureAddress".to_string()));
 
-            if function_address != ptr::null_mut() 
+            if function_address != 0 
             {
                 let hmodule: PVOID = std::mem::transmute(module_handle);
                 let func_ptr: unsafe extern "system" fn (PVOID, *mut String, u32, *mut PVOID) -> i32 = std::mem::transmute(function_address); //LdrGetProcedureAddress 
@@ -131,7 +137,7 @@ pub fn ldr_get_procedure_address (module_handle: i64, function_name: String, ord
 
                 if ret == 0
                 {
-                    result = *return_address as u64;
+                    result = *return_address as i64;
                 }
             }
             else 
@@ -148,7 +154,7 @@ pub fn ldr_get_procedure_address (module_handle: i64, function_name: String, ord
     }
 }
 
-pub fn load_library_a(module: &String) -> Result<u64, String> {
+pub fn load_library_a(module: &String) -> Result<i64, String> {
 
     unsafe 
     {    
@@ -159,7 +165,7 @@ pub fn load_library_a(module: &String) -> Result<u64, String> {
         {
             let function_address = get_function_address(module_base_address, lc!("LoadLibraryA".to_string()));
 
-            if function_address != ptr::null_mut() 
+            if function_address != 0 
             {
                 let function_ptr: extern "system" fn (PSTR) -> HINSTANCE = std::mem::transmute(function_address); 
                 let name = CString::new(module.to_string()).expect("CString::new failed");
@@ -177,7 +183,7 @@ pub fn load_library_a(module: &String) -> Result<u64, String> {
             return Err(lc!("[x] Error obtaining kernel32.dll base address."));
         }
 
-        Ok(result.0 as u64)
+        Ok(result.0 as i64)
     }
 
 }
