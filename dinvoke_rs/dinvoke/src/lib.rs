@@ -2,8 +2,6 @@
 extern crate litcrypt;
 use_litcrypt!();
 
-
-
 use std::ptr;
 use std::ffi::CString;
 use libc::c_void;

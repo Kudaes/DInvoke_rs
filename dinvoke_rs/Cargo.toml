@@ -3,14 +3,6 @@ name = "dinvoke_rs"
 version = "0.1.0"
 edition = "2018"
 
-[workspace]
-
 [dependencies]
-bindings = { path = "bindings" }
-windows = "0.19"
-libc = "0.2.101"
-winproc = "0.6.4"
-os_info = { version = "3.0", default-features = false }
-winapi = "0.3"
-litcrypt = "0.3"
 dinvoke = { path = "dinvoke" }
+manualmap = { path = "manualmap" }

@@ -1,5 +1,5 @@
 [package]
-name = "dinvoke"
+name = "manualmap"
 version = "0.1.0"
 edition = "2018"
 
@@ -7,6 +7,6 @@ edition = "2018"
 
 [dependencies]
 bindings = { path = "../bindings" }
-libc = "0.2.101"
-winproc = "0.6.4"
+dinvoke = { path = "../dinvoke" }
 litcrypt = "0.3"
+os_info = { version = "3.0", default-features = false }
