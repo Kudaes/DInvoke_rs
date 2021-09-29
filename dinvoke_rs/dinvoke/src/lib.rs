@@ -1,28 +1,41 @@
+#[macro_use]
+extern crate litcrypt;
+use_litcrypt!();
+
+
+
 use std::ptr;
 use std::ffi::CString;
 use libc::c_void;
 use litcrypt::lc;
 use winproc::Process;
-use winapi::{shared::minwindef::HINSTANCE__};
 
-use bindings::{
-    Windows::Win32::Foundation::{HINSTANCE,PSTR},
-    
-};
+use bindings::Windows::Win32::Foundation::{HINSTANCE,PSTR};
+
 
 type PVOID = *mut c_void;
 
-
+/// Returns the base address of a module loaded in the current process.
+///
+/// # Examples
+///
+/// ```
+/// let ntdll = dinvoke::get_module_base_address(&"ntdll.dll".to_string());
+///
+/// if ntdll != 0
+/// {
+///     println!("The base address of ntdll.dll is 0x{:X}.", ntdll);
+/// }
+/// ```
 pub fn get_module_base_address (module_name: &String) -> i64
 {
     let process = Process::current();
     let modules = process.module_list().unwrap();
-    let handle: *mut HINSTANCE__;
     for m in modules
     {
         if m.name().unwrap().to_lowercase() == module_name.to_ascii_lowercase()
         {
-            handle = m.handle();
+            let handle = m.handle();
             return handle as i64;
         }
     }
@@ -95,12 +108,12 @@ pub fn get_function_address(module_base_address: i64, function: String) -> i64 {
 }
 
 pub fn get_function_address_ordinal (module_base_address: i64, ordinal: u32) -> i64 {
-   
+
     let ret = ldr_get_procedure_address(module_base_address, "".to_string(), ordinal);
 
     match ret {
-       Ok(r) => return r,
-       Err(_) => return 0, 
+    Ok(r) => return r,
+    Err(_) => return 0, 
     }
     
 }
