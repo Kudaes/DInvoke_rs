@@ -57,7 +57,7 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<i64, String> {
     }
     else 
     {
-        dwsize = pe_info.opt_header_64.SizeOfImage as usize;
+        dwsize = pe_info.opt_header_64.size_of_image as usize;
     }
 
     unsafe 
@@ -124,9 +124,9 @@ pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String> {
 
         let mut sections: Vec<IMAGE_SECTION_HEADER> = vec![];
 
-        for i in 0..pe_metadata.image_file_header.NumberOfSections
+        for i in 0..pe_metadata.image_file_header.number_of_sections
         {
-            let section_ptr = (opt_header as u64 + pe_metadata.image_file_header.SizeOfOptionalHeader as u64 + (i * 0x28) as u64) as *const u8;
+            let section_ptr = (opt_header as u64 + pe_metadata.image_file_header.size_of_optional_header as u64 + (i * 0x28) as u64) as *const u8;
             let section_ptr: *const IMAGE_SECTION_HEADER = std::mem::transmute(section_ptr);
             sections.push(*section_ptr);
         }
@@ -151,7 +151,7 @@ pub fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_in
     }
     else 
     {
-        nsize = pe_info.opt_header_64.SizeOfHeaders as usize;
+        nsize = pe_info.opt_header_64.size_of_headers as usize;
     }
 
     unsafe 
@@ -214,8 +214,8 @@ pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void) {
         }
         else 
         {
-            image_data_directory = pe_info.opt_header_64.DataDirectory[5]; // BaseRelocationTable
-            image_delta = module_memory_base as i64 - pe_info.opt_header_64.ImageBase as i64;
+            image_data_directory = pe_info.opt_header_64.datas_directory[5]; // BaseRelocationTable
+            image_delta = module_memory_base as i64 - pe_info.opt_header_64.image_base as i64;
         }
 
         let mut reloc_table_ptr = (module_memory_base as u64 + image_data_directory.VirtualAddress as u64) as *mut i32;
@@ -276,7 +276,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
         }
         else 
         {
-            image_data_directory = pe_info.opt_header_64.DataDirectory[1]; // ImportTable
+            image_data_directory = pe_info.opt_header_64.datas_directory[1]; // ImportTable
         }
 
         if image_data_directory.VirtualAddress == 0 
@@ -488,18 +488,18 @@ fn get_api_mapping() -> HashMap<String,String> {
 
         let api_set_namespace_ptr = *(((*process_information_ptr).PebBaseAddress as u64 + api_set_map_offset) as *mut isize);
         let api_set_namespace_ptr: *mut ApiSetNamespace = std::mem::transmute(api_set_namespace_ptr);
-        let namespace = *api_set_namespace_ptr; //ApiSetNamespace {Count: count, EntryOffset: entry_offset};
+        let namespace = *api_set_namespace_ptr; 
 
-        for i in 0..namespace.Count
+        for i in 0..namespace.count
         {
 
-            let set_entry_ptr = (api_set_namespace_ptr as u64 + namespace.EntryOffset as u64 + (i * size_of::<ApiSetNamespaceEntry>() as i32) as u64) as *mut ApiSetNamespaceEntry;
+            let set_entry_ptr = (api_set_namespace_ptr as u64 + namespace.entry_offset as u64 + (i * size_of::<ApiSetNamespaceEntry>() as i32) as u64) as *mut ApiSetNamespaceEntry;
             let set_entry = *set_entry_ptr;
 
-            let mut api_set_entry_name_ptr = (api_set_namespace_ptr as u64 + set_entry.NameOffset as u64) as *mut u8;
+            let mut api_set_entry_name_ptr = (api_set_namespace_ptr as u64 + set_entry.name_offset as u64) as *mut u8;
             let mut api_set_entry_name: String = "".to_string();
             let mut j = 0;
-            while j < (set_entry.NameLength / 2 )
+            while j < (set_entry.name_length / 2 )
             {
                 let c = *api_set_entry_name_ptr as char;
                 if c != '\0' // Esto se podria meter en una funcion aparte
@@ -515,16 +515,16 @@ fn get_api_mapping() -> HashMap<String,String> {
             let api_set_entry_key = format!("{}{}",&api_set_entry_name[..api_set_entry_name.len()-2], ".dll");
             let mut set_value_ptr: *mut ApiSetValueEntry = ptr::null_mut();
 
-            if set_entry.ValueLength == 1
+            if set_entry.value_length == 1
             {
-                let value = (api_set_namespace_ptr as u64 + set_entry.ValueOffset as u64) as *mut u8;
+                let value = (api_set_namespace_ptr as u64 + set_entry.value_offset as u64) as *mut u8;
                 set_value_ptr = std::mem::transmute(value);
             }
-            else if set_entry.ValueLength > 1
+            else if set_entry.value_length > 1
             {
-                for x in 0..set_entry.ValueLength 
+                for x in 0..set_entry.value_length 
                 {
-                    let host_ptr = (api_set_entry_name_ptr as u64 + set_entry.ValueOffset as u64 + size_of::<ApiSetValueEntry>() as u64 * x as u64) as *mut u8;
+                    let host_ptr = (api_set_entry_name_ptr as u64 + set_entry.value_offset as u64 + size_of::<ApiSetValueEntry>() as u64 * x as u64) as *mut u8;
                     let mut c: u8 = u8::default();
                     let mut host: String = "".to_string();
                     while c as char != '\0'
@@ -538,23 +538,23 @@ fn get_api_mapping() -> HashMap<String,String> {
 
                     if host != api_set_entry_name
                     {
-                        set_value_ptr = (api_set_namespace_ptr as u64 + set_entry.ValueOffset as u64 + size_of::<ApiSetValueEntry>() as u64 * x as u64) as *mut ApiSetValueEntry;
+                        set_value_ptr = (api_set_namespace_ptr as u64 + set_entry.value_offset as u64 + size_of::<ApiSetValueEntry>() as u64 * x as u64) as *mut ApiSetValueEntry;
                     }
                 }
 
                 if set_value_ptr == ptr::null_mut()
                 {
-                    set_value_ptr = (api_set_namespace_ptr as u64 + set_entry.ValueOffset as u64) as *mut ApiSetValueEntry;
+                    set_value_ptr = (api_set_namespace_ptr as u64 + set_entry.value_offset as u64) as *mut ApiSetValueEntry;
                 }
             }
 
             let set_value = *set_value_ptr;
             let mut api_set_value: String = "".to_string();
-            if set_value.ValueCount != 0
+            if set_value.value_count != 0
             {
-                let mut value_ptr = (api_set_namespace_ptr as u64 + set_value.ValueOffset as u64) as *mut u8;
+                let mut value_ptr = (api_set_namespace_ptr as u64 + set_value.value_offset as u64) as *mut u8;
                 let mut r = 0;
-                while r < (set_value.ValueCount / 2 )
+                while r < (set_value.value_count / 2 )
                 {
                     let c = *value_ptr as char;
                     if c != '\0' 
@@ -589,7 +589,7 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
         }
         else 
         {
-            base_of_code = pe_info.opt_header_64.BaseOfCode as usize;
+            base_of_code = pe_info.opt_header_64.base_of_code as usize;
         }
 
         let mut flnewprotect = PAGE_PROTECTION_FLAGS::default();
@@ -678,75 +678,75 @@ impl Default for PeMetadata {
 #[repr(C)]
 #[derive(Copy, Clone, Default, PartialEq, Debug, Eq)]
 struct ApiSetNamespace {
-    Nothing: [u8;12],
-    Count: i32, // offset 0x0C
-    EntryOffset: i32, // offset 0x10
+    unused: [u8;12],
+    count: i32, // offset 0x0C
+    entry_offset: i32, // offset 0x10
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, PartialEq, Debug, Eq)]
 struct ApiSetNamespaceEntry {
-    Nothing1: [u8;4],
-    NameOffset: i32, // offset 0x04
-    NameLength: i32, // offset 0x08
-    Nothing2: [u8;4],
-    ValueOffset: i32, // offset 0x10
-    ValueLength: i32, // offset 0x14
+    unused1: [u8;4],
+    name_offset: i32, // offset 0x04
+    name_length: i32, // offset 0x08
+    unused2: [u8;4],
+    value_offset: i32, // offset 0x10
+    value_length: i32, // offset 0x14
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, PartialEq, Debug, Eq)]
 struct ApiSetValueEntry {
-    Flags: i32, // offset 0x00
-    NameOffset: i32, // offset 0x04
-    NameCount: i32, // offset 0x08
-    ValueOffset: i32, // offset 0x0C
-    ValueCount: i32, // offset 0x10
+    flags: i32, // offset 0x00
+    name_offset: i32, // offset 0x04
+    name_count: i32, // offset 0x08
+    value_offset: i32, // offset 0x0C
+    value_count: i32, // offset 0x10
 }
 
 #[derive(Copy, Clone, Default, PartialEq, Debug, Eq)]
 #[repr(C)]
 struct IMAGE_FILE_HEADER {
-    Machine: u16,
-    NumberOfSections: u16,
-    TimeDataStamp: u32,
-    PointerToSymbolTable: u32,
-    NumberOfSymbols: u32,
-    SizeOfOptionalHeader: u16,
-    Characteristics: u16,
+    machine: u16,
+    number_of_sections: u16,
+    time_data_stamp: u32,
+    pointer_to_symbol_table: u32,
+    number_of_symbols: u32,
+    size_of_optional_header: u16,
+    characteristics: u16,
 }
 
 #[derive(Copy, Clone,Default)]
 #[repr(C)] // required to keep fields order, otherwise Rust may change that order randomly
 struct IMAGE_OPTIONAL_HEADER64 {
-        Magic: u16, 
-        MajorLinkerVersion: u8, 
-        MinorLinkerVersion: u8, 
-        SizeOfCode: u32, 
-        SizeOfInitializedData: u32, 
-        SizeOfUninitializedData: u32, 
-        AddressOfEntryPoint: u32, 
-        BaseOfCode: u32, 
-        ImageBase: u64, 
-        SectionAlignment: u32, 
-        FileAlignment: u32, 
-        MajorOperatingSystemVersion: u16, 
-        MinorOperatingSystemVersion: u16, 
-        MajorImageVersion: u16,
-        MinorImageVersion: u16, 
-        MajorSubsystemVersion: u16,
-        MinorSubsystemVersion: u16, 
-        Win32VersionValue: u32, 
-        SizeOfImage: u32, 
-        SizeOfHeaders: u32, 
-        CheckSum: u32, 
-        Subsystem: u16, 
-        DllCharacteristics: u16, 
-        SizeOfStackReserve: u64, 
-        SizeOfStackCommit: u64, 
-        SizeOfHeapReserve: u64, 
-        SizeOfHeapCommit: u64, 
-        LoaderFlags: u32, 
-        NumberOfRvaAndSizes: u32, 
-        DataDirectory: [IMAGE_DATA_DIRECTORY; 16], 
+        magic: u16, 
+        major_linker_version: u8, 
+        minor_linker_version: u8, 
+        size_of_code: u32, 
+        size_of_initialized_data: u32, 
+        size_of_unitialized_data: u32, 
+        address_of_entry_point: u32, 
+        base_of_code: u32, 
+        image_base: u64, 
+        section_alignment: u32, 
+        file_alignment: u32, 
+        major_operating_system_version: u16, 
+        minor_operating_system_version: u16, 
+        major_image_version: u16,
+        minor_image_version: u16, 
+        major_subsystem_version: u16,
+        minor_subsystem_version: u16, 
+        win32_version_value: u32, 
+        size_of_image: u32, 
+        size_of_headers: u32, 
+        checksum: u32, 
+        subsystem: u16, 
+        dll_characteristics: u16, 
+        size_of_stack_reserve: u64, 
+        size_of_stack_commit: u64, 
+        size_of_heap_reserve: u64, 
+        size_of_heap_commit: u64, 
+        loader_flags: u32, 
+        number_of_rva_and_sizes: u32, 
+        datas_directory: [IMAGE_DATA_DIRECTORY; 16], 
 }
