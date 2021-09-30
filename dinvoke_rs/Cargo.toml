@@ -6,3 +6,4 @@ edition = "2018"
 [dependencies]
 dinvoke = { path = "dinvoke" }
 manualmap = { path = "manualmap" }
+bindings = { path = "bindings" }
