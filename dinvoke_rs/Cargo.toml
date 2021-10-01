@@ -7,3 +7,4 @@ edition = "2018"
 dinvoke = { path = "dinvoke" }
 manualmap = { path = "manualmap" }
 bindings = { path = "bindings" }
+data = { path = "data" }

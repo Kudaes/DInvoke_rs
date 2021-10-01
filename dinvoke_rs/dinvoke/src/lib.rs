@@ -314,10 +314,29 @@ pub fn call_module_entry_point(pe_info: &PeMetadata, module_base_address: i64) -
 
 #[macro_export]
 macro_rules! dynamic_invoke {
+
+    ($a:expr, $b:expr, $c:expr) => {
+        let ret = $crate::call_module_entry_point(&$a,$b);
+
+        match ret {
+            Ok(_) => $c = true,
+            Err(_) => $c = false,
+        }
+
+    };
+
     ($a:expr, $b:expr, $c:expr, $d:expr, $($e:tt)*) => {
-        $c = std::mem::transmute($crate::get_function_address($crate::get_module_base_address($a),$b));
-        $d = $c($($e)*);
-        let aaa = $crate::get_module_base_address($a);
-        $d
+
+        let function_ptr = $crate::get_function_address($a, $b.to_string());
+        if function_ptr != 0
+        {
+            $c = std::mem::transmute(function_ptr);
+            $d = Some($c($($e)*));
+        }
+        else
+        {
+            $d = None;
+        }
+
     };
 }
