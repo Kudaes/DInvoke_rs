@@ -1,9 +1,11 @@
 //use std::ffi::CString;
 //use bindings::Windows::Win32::Foundation::{FARPROC, HINSTANCE, PSTR};
 
-//type func = extern "system" fn (PSTR) -> HINSTANCE;
 fn main() {
     println!("Hello, world!");
+    //let a = manualmap::read_and_map_module("C:\\Users\\PcCom\\Desktop\\hello.dll".to_string()).unwrap();
+    //let ret = dinvoke::call_module_entry_point(&a.0, a.1);
+
    /*/ unsafe {
         let name = CString::new("LoadLibraryA".to_string()).expect("CString::new failed");
         let function_name = PSTR{0: name.as_ptr() as *mut u8};

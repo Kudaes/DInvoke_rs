@@ -8,5 +8,6 @@ edition = "2018"
 [dependencies]
 bindings = { path = "../bindings" }
 dinvoke = { path = "../dinvoke" }
+data = { path = "../data" }
 litcrypt = "0.3"
 os_info = { version = "3.0", default-features = false }

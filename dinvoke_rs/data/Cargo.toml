@@ -1,5 +1,5 @@
 [package]
-name = "dinvoke"
+name = "data"
 version = "0.1.0"
 edition = "2018"
 
@@ -7,7 +7,3 @@ edition = "2018"
 
 [dependencies]
 bindings = { path = "../bindings" }
-data = { path = "../data" }
-libc = "0.2.101"
-winproc = "0.6.4"
-litcrypt = "0.3"

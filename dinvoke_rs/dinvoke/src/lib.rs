@@ -4,14 +4,12 @@ use_litcrypt!();
 
 use std::ptr;
 use std::ffi::CString;
+use data::{DLL_PROCESS_ATTACH, EntryPoint, LdrGetProcedureAddress, LoadLibraryA, PeMetadata, PVOID};
 use libc::c_void;
 use litcrypt::lc;
 use winproc::Process;
 
 use bindings::Windows::Win32::Foundation::{HINSTANCE,PSTR};
-
-
-type PVOID = *mut c_void;
 
 /// Retrieves the base address of a module loaded in the current process.
 ///
@@ -186,7 +184,7 @@ pub fn ldr_get_procedure_address (module_handle: i64, function_name: String, ord
     {   
         let mut result: i64 = 0;
         
-        let module_base_address = get_module_base_address(&lc!("ntdll.dll".to_string())); 
+        let module_base_address = get_module_base_address(&lc!("ntdll.dll")); 
         if module_base_address != 0
         {
             let function_address = get_function_address(module_base_address, lc!("LdrGetProcedureAddress".to_string()));
@@ -194,7 +192,7 @@ pub fn ldr_get_procedure_address (module_handle: i64, function_name: String, ord
             if function_address != 0 
             {
                 let hmodule: PVOID = std::mem::transmute(module_handle);
-                let func_ptr: unsafe extern "system" fn (PVOID, *mut String, u32, *mut PVOID) -> i32 = std::mem::transmute(function_address); //LdrGetProcedureAddress 
+                let func_ptr: LdrGetProcedureAddress = std::mem::transmute(function_address);  
                 let return_address: *mut c_void = std::mem::transmute(&u64::default());
                 let return_address: *mut PVOID = std::mem::transmute(return_address);
                 let mut fun_name: *mut String = std::mem::transmute(&String::default());
@@ -249,15 +247,15 @@ pub fn load_library_a(module: &String) -> Result<i64, String> {
     unsafe 
     {    
 
-        let module_base_address = get_module_base_address(&lc!("kernel32.dll".to_string())); 
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
         let mut result = HINSTANCE {0: 0 as isize};
         if module_base_address != 0
         {
-            let function_address = get_function_address(module_base_address, lc!("LoadLibraryA".to_string()));
+            let function_address = get_function_address(module_base_address, lc!("LoadLibraryA"));
 
             if function_address != 0 
             {
-                let function_ptr: extern "system" fn (PSTR) -> HINSTANCE = std::mem::transmute(function_address); 
+                let function_ptr: LoadLibraryA = std::mem::transmute(function_address); 
                 let name = CString::new(module.to_string()).expect("CString::new failed");
                 let function_name = PSTR{0: name.as_ptr() as *mut u8};
 
@@ -276,6 +274,42 @@ pub fn load_library_a(module: &String) -> Result<i64, String> {
         Ok(result.0 as i64)
     }
 
+}
+
+/// Calls the module's entry point with the option DLL_ATTACH_PROCESS.
+///
+/// # Examples
+///
+/// ```ignore
+///    let pe = manualmap::read_and_map_module("c:\\some\\random\\file.dll".to_string()).unwrap();
+///    let ret = dinvoke::call_module_entry_point(&pe.0, pe.1);
+/// ```
+pub fn call_module_entry_point(pe_info: &PeMetadata, module_base_address: i64) -> Result<(), String> {
+
+    let entry_point;
+    if pe_info.is_32_bit 
+    {
+        entry_point = module_base_address + pe_info.opt_header_32.AddressOfEntryPoint as i64;
+    }
+    else 
+    {
+        entry_point = module_base_address + pe_info.opt_header_64.address_of_entry_point as i64;
+
+    }
+
+    unsafe 
+    {
+        let main: EntryPoint = std::mem::transmute(entry_point);
+        let module = HINSTANCE {0: entry_point as isize};
+        let ret = main(module, DLL_PROCESS_ATTACH, ptr::null_mut());
+
+        if !ret.as_bool()
+        {
+            return Err(lc!("[x] Failed to call module's entry point (DllMain -> DLL_PROCESS_ATTACH)."));
+        }
+
+        Ok(())
+    }
 }
 
 #[macro_export]

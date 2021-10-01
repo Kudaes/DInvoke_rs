@@ -7,12 +7,12 @@ use std::collections::HashMap;
 use std::{fs, ptr};
 use std::mem::size_of;
 use std::ffi::c_void;
+use data::{PeMetadata,ApiSetNamespace,ApiSetNamespaceEntry,ApiSetValueEntry,IMAGE_FILE_HEADER,IMAGE_OPTIONAL_HEADER64};
 use litcrypt::lc;
 
 
 use bindings::{
-    Windows::Win32::System::Diagnostics::Debug::{WriteProcessMemory,IMAGE_OPTIONAL_HEADER32,IMAGE_SECTION_HEADER,
-        IMAGE_DATA_DIRECTORY},
+    Windows::Win32::System::Diagnostics::Debug::{WriteProcessMemory,IMAGE_OPTIONAL_HEADER32,IMAGE_SECTION_HEADER},
     Windows::Win32::System::Memory::{VirtualAlloc,VirtualProtect,VIRTUAL_ALLOCATION_TYPE,PAGE_PROTECTION_FLAGS},
     Windows::Win32::Foundation::HANDLE,
     Windows::Win32::System::Threading::{GetCurrentProcess,NtQueryInformationProcess,PROCESS_BASIC_INFORMATION,PROCESSINFOCLASS},
@@ -33,7 +33,7 @@ pub const SECTION_MEM_READ: u32 = 0x40000000;
 pub const SECTION_MEM_WRITE: u32 = 0x80000000;
 pub const SECTION_MEM_EXECUTE: u32 = 0x20000000;
 
-pub fn read_and_map_module (filepath: String) -> Result<i64, String> {
+pub fn read_and_map_module (filepath: String) -> Result<(PeMetadata,i64), String> {
 
     let file_content = fs::read(filepath).expect(&lc!("[x] Error opening the file."));
     let file_content_ptr = file_content.as_ptr();
@@ -42,7 +42,7 @@ pub fn read_and_map_module (filepath: String) -> Result<i64, String> {
     Ok(result)
 }
 
-pub fn manually_map_module (file_ptr: *const u8) -> Result<i64, String> {
+pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,i64), String> {
 
     let pe_info = get_pe_metadata(file_ptr)?;
     if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) 
@@ -62,9 +62,9 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<i64, String> {
 
     unsafe 
     {
-        let lpaddress: *mut c_void = std::mem::transmute(487194624 as u64);
+        //let lpaddress: *mut c_void = std::mem::transmute(26673152 as u64);
         let image_ptr = VirtualAlloc(
-            lpaddress,
+            ptr::null_mut(),
             dwsize, 
             VIRTUAL_ALLOCATION_TYPE::from(MEM_COMMIT | MEM_RESERVE), 
             PAGE_PROTECTION_FLAGS::from(PAGE_READWRITE)
@@ -78,7 +78,7 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<i64, String> {
 
         set_module_section_permissions(&pe_info, image_ptr)?;
 
-        Ok(image_ptr as i64)
+        Ok((pe_info,image_ptr as i64))
 
     }
 
@@ -649,104 +649,4 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
 
         Ok(())
     } 
-}
-
-#[derive(Clone)]
-#[repr(C)]
-pub struct PeMetadata {
-    pe: u32,
-    is_32_bit: bool,
-    image_file_header: IMAGE_FILE_HEADER,
-    opt_header_32: IMAGE_OPTIONAL_HEADER32,
-    opt_header_64: IMAGE_OPTIONAL_HEADER64,
-    sections: Vec<IMAGE_SECTION_HEADER> 
-}
-
-impl Default for PeMetadata {
-    fn default() -> PeMetadata {
-        PeMetadata {
-            pe: u32::default(),
-            is_32_bit: false,
-            image_file_header: IMAGE_FILE_HEADER::default(),
-            opt_header_32: IMAGE_OPTIONAL_HEADER32::default(),
-            opt_header_64: IMAGE_OPTIONAL_HEADER64::default(),
-            sections: Vec::default(),  
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Default, PartialEq, Debug, Eq)]
-struct ApiSetNamespace {
-    unused: [u8;12],
-    count: i32, // offset 0x0C
-    entry_offset: i32, // offset 0x10
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Default, PartialEq, Debug, Eq)]
-struct ApiSetNamespaceEntry {
-    unused1: [u8;4],
-    name_offset: i32, // offset 0x04
-    name_length: i32, // offset 0x08
-    unused2: [u8;4],
-    value_offset: i32, // offset 0x10
-    value_length: i32, // offset 0x14
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Default, PartialEq, Debug, Eq)]
-struct ApiSetValueEntry {
-    flags: i32, // offset 0x00
-    name_offset: i32, // offset 0x04
-    name_count: i32, // offset 0x08
-    value_offset: i32, // offset 0x0C
-    value_count: i32, // offset 0x10
-}
-
-#[derive(Copy, Clone, Default, PartialEq, Debug, Eq)]
-#[repr(C)]
-struct IMAGE_FILE_HEADER {
-    machine: u16,
-    number_of_sections: u16,
-    time_data_stamp: u32,
-    pointer_to_symbol_table: u32,
-    number_of_symbols: u32,
-    size_of_optional_header: u16,
-    characteristics: u16,
-}
-
-#[derive(Copy, Clone,Default)]
-#[repr(C)] // required to keep fields order, otherwise Rust may change that order randomly
-struct IMAGE_OPTIONAL_HEADER64 {
-        magic: u16, 
-        major_linker_version: u8, 
-        minor_linker_version: u8, 
-        size_of_code: u32, 
-        size_of_initialized_data: u32, 
-        size_of_unitialized_data: u32, 
-        address_of_entry_point: u32, 
-        base_of_code: u32, 
-        image_base: u64, 
-        section_alignment: u32, 
-        file_alignment: u32, 
-        major_operating_system_version: u16, 
-        minor_operating_system_version: u16, 
-        major_image_version: u16,
-        minor_image_version: u16, 
-        major_subsystem_version: u16,
-        minor_subsystem_version: u16, 
-        win32_version_value: u32, 
-        size_of_image: u32, 
-        size_of_headers: u32, 
-        checksum: u32, 
-        subsystem: u16, 
-        dll_characteristics: u16, 
-        size_of_stack_reserve: u64, 
-        size_of_stack_commit: u64, 
-        size_of_heap_reserve: u64, 
-        size_of_heap_commit: u64, 
-        loader_flags: u32, 
-        number_of_rva_and_sizes: u32, 
-        datas_directory: [IMAGE_DATA_DIRECTORY; 16], 
 }
