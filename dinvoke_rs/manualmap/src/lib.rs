@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::{fs, ptr};
 use std::mem::size_of;
 use std::ffi::c_void;
-use data::{PeMetadata,ApiSetNamespace,ApiSetNamespaceEntry,ApiSetValueEntry,IMAGE_FILE_HEADER,IMAGE_OPTIONAL_HEADER64};
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PeMetadata, SECTION_MEM_EXECUTE, SECTION_MEM_READ, SECTION_MEM_WRITE};
 use litcrypt::lc;
 
 
@@ -19,20 +19,21 @@ use bindings::{
     Windows::Win32::System::SystemServices::{IMAGE_BASE_RELOCATION,IMAGE_IMPORT_DESCRIPTOR,IMAGE_THUNK_DATA32,IMAGE_THUNK_DATA64},
 };
 
-
-pub const PAGE_READONLY: u32 = 0x2;
-pub const PAGE_READWRITE: u32 = 0x4;
-pub const PAGE_EXECUTE_READWRITE: u32 = 0x40;
-pub const PAGE_EXECUTE_READ: u32 = 0x20;
-pub const PAGE_EXECUTE: u32 = 0x10;
-
-pub const MEM_COMMIT: u32 = 0x1000;
-pub const MEM_RESERVE: u32 = 0x2000;
-
-pub const SECTION_MEM_READ: u32 = 0x40000000;
-pub const SECTION_MEM_WRITE: u32 = 0x80000000;
-pub const SECTION_MEM_EXECUTE: u32 = 0x20000000;
-
+/// Manually maps a PE from disk to the memory of the current process.
+///
+/// It will return either a pair (PeMetadata,i64) containing the mapped PE
+/// metadata and its base address or a String with a descriptive error message.
+///
+/// # Examples
+///
+/// ```
+/// let ntdll = manualmap::read_and_map_module("c:\\windows\\system32\\ntdll.dll");
+///
+/// match ntdll {
+///     Ok(x) => if x.1 != 0 {println!("The base address of ntdll.dll is 0x{:X}.", x.1);},
+///     Err(e) => println!("{}", e),      
+/// }
+/// ```
 pub fn read_and_map_module (filepath: &str) -> Result<(PeMetadata,i64), String> {
 
     let file_content = fs::read(filepath).expect(&lc!("[x] Error opening the specified file."));
@@ -42,6 +43,20 @@ pub fn read_and_map_module (filepath: &str) -> Result<(PeMetadata,i64), String> 
     Ok(result)
 }
 
+/// Manually maps a PE into the current process.
+///
+/// It will return either a pair (PeMetadata,i64) containing the mapped PE
+/// metadata and its base address or a String with a descriptive error message.
+///
+/// # Examples
+///
+/// ```
+/// use std::fs;
+///
+/// let file_content = fs::read("c:\\windows\\system32\\ntdll.dll").expect("[x] Error opening the specified file.");
+/// let file_content_ptr = file_content.as_ptr();
+/// let result = manualmap::manually_map_module(file_content_ptr);
+/// ```
 pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,i64), String> {
 
     let pe_info = get_pe_metadata(file_ptr)?;
@@ -84,6 +99,20 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,i64), Str
 
 }
 
+/// Retrieves PE headers information from the module base address.
+///
+/// It will return either a data::PeMetada struct containing the PE
+/// metadata or a String with a descriptive error message.
+///
+/// # Examples
+///
+/// ```
+/// use std::fs;
+///
+/// let file_content = fs::read("c:\\windows\\system32\\ntdll.dll").expect("[x] Error opening the specified file.");
+/// let file_content_ptr = file_content.as_ptr();
+/// let result = manualmap::get_pe_metadata(file_content_ptr);
+/// ```
 pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String> {
     
     let mut pe_metadata= PeMetadata::default();
@@ -137,7 +166,7 @@ pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String> {
     }
 }
 
-pub fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_info: &PeMetadata) -> Result<(),String>{
+fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_info: &PeMetadata) -> Result<(),String>{
 
     if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) 
     {
@@ -200,6 +229,10 @@ pub fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_in
     }
 }
 
+/// Relocates a module in memory.
+///
+/// The parameters required are the module's metadata information and a
+/// pointer to the base address where the module is mapped in memory.
 pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void) {
 
     unsafe {
@@ -264,6 +297,10 @@ pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void) {
     }
 }
 
+/// Rewrites the IAT of a manually mapped module.
+///
+/// The parameters required are the module's metadata information and a
+/// pointer to the base address where the module is mapped in memory.
 pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Result<(),String> {
 
     unsafe 
@@ -577,6 +614,10 @@ fn get_api_mapping() -> HashMap<String,String> {
     }
 }
 
+/// Sets correct module section permissions for a manually mapped module.
+///
+/// The parameters required are the module's metadata information and a
+/// pointer to the base address where the module is mapped in memory.
 pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Result<(),String> {
 
     unsafe 

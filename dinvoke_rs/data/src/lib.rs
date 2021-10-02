@@ -12,6 +12,20 @@ pub const DLL_PROCESS_ATTACH: u32 = 1;
 pub const DLL_THREAD_ATTACH: u32 = 2;
 pub const DLL_THREAD_DETACH: u32 = 3;
 
+pub const PAGE_READONLY: u32 = 0x2;
+pub const PAGE_READWRITE: u32 = 0x4;
+pub const PAGE_EXECUTE_READWRITE: u32 = 0x40;
+pub const PAGE_EXECUTE_READ: u32 = 0x20;
+pub const PAGE_EXECUTE: u32 = 0x10;
+
+pub const MEM_COMMIT: u32 = 0x1000;
+pub const MEM_RESERVE: u32 = 0x2000;
+
+pub const SECTION_MEM_READ: u32 = 0x40000000;
+pub const SECTION_MEM_WRITE: u32 = 0x80000000;
+pub const SECTION_MEM_EXECUTE: u32 = 0x20000000;
+
+
 
 #[derive(Clone)]
 #[repr(C)]
