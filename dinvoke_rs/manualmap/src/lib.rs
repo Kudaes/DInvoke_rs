@@ -33,9 +33,9 @@ pub const SECTION_MEM_READ: u32 = 0x40000000;
 pub const SECTION_MEM_WRITE: u32 = 0x80000000;
 pub const SECTION_MEM_EXECUTE: u32 = 0x20000000;
 
-pub fn read_and_map_module (filepath: String) -> Result<(PeMetadata,i64), String> {
+pub fn read_and_map_module (filepath: &str) -> Result<(PeMetadata,i64), String> {
 
-    let file_content = fs::read(filepath).expect(&lc!("[x] Error opening the file."));
+    let file_content = fs::read(filepath).expect(&lc!("[x] Error opening the specified file."));
     let file_content_ptr = file_content.as_ptr();
     let result = manually_map_module(file_content_ptr)?;
 
@@ -379,7 +379,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
                                 imp_by_name_ptr = imp_by_name_ptr.add(1);
                             }
 
-                            let func_ptr = dinvoke::get_function_address(module_handle as i64, import_name);
+                            let func_ptr = dinvoke::get_function_address(module_handle as i64, &import_name);
                             *ft_itd = func_ptr as i32;
 
                         }
@@ -429,7 +429,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
                                 imp_by_name_ptr = imp_by_name_ptr.add(1);
                             }
 
-                            let func_ptr = dinvoke::get_function_address(module_handle as i64, import_name) as *mut i64;
+                            let func_ptr = dinvoke::get_function_address(module_handle as i64, &import_name) as *mut i64;
                             *ft_itd = func_ptr as i64;
                         }
                         else 

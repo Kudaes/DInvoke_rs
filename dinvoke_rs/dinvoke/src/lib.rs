@@ -19,14 +19,14 @@ use bindings::Windows::Win32::Foundation::{HINSTANCE,PSTR};
 /// # Examples
 ///
 /// ```
-/// let ntdll = dinvoke::get_module_base_address(&"ntdll.dll".to_string());
+/// let ntdll = dinvoke::get_module_base_address("ntdll.dll");
 ///
 /// if ntdll != 0
 /// {
 ///     println!("The base address of ntdll.dll is 0x{:X}.", ntdll);
 /// }
 /// ```
-pub fn get_module_base_address (module_name: &String) -> i64
+pub fn get_module_base_address (module_name: &str) -> i64
 {
     let process = Process::current();
     let modules = process.module_list().unwrap();
@@ -53,15 +53,15 @@ pub fn get_module_base_address (module_name: &String) -> i64
 /// # Examples
 ///
 /// ```
-/// let ntdll = dinvoke::get_module_base_address(&"ntdll.dll".to_string());
+/// let ntdll = dinvoke::get_module_base_address("ntdll.dll");
 ///
 /// if ntdll != 0
 /// {
-///     let addr = dinvoke::get_function_address(ntdll, "NtCreateThread".to_string());    
+///     let addr = dinvoke::get_function_address(ntdll, "NtCreateThread");    
 ///     println!("The address where NtCreateThread is located at is 0x{:X}.", addr);
 /// }
 /// ```
-pub fn get_function_address(module_base_address: i64, function: String) -> i64 {
+pub fn get_function_address(module_base_address: i64, function: &str) -> i64 {
     
     let mut function_ptr:*mut i32 = ptr::null_mut();
 
@@ -134,7 +134,7 @@ pub fn get_function_address(module_base_address: i64, function: String) -> i64 {
 /// # Examples
 ///
 /// ```
-/// let ntdll = dinvoke::get_module_base_address(&"ntdll.dll".to_string());
+/// let ntdll = dinvoke::get_module_base_address("ntdll.dll");
 ///
 /// if ntdll != 0
 /// {
@@ -145,7 +145,7 @@ pub fn get_function_address(module_base_address: i64, function: String) -> i64 {
 /// ```
 pub fn get_function_address_ordinal (module_base_address: i64, ordinal: u32) -> i64 {
 
-    let ret = ldr_get_procedure_address(module_base_address, "".to_string(), ordinal);
+    let ret = ldr_get_procedure_address(module_base_address, "", ordinal);
 
     match ret {
     Ok(r) => return r,
@@ -165,12 +165,12 @@ pub fn get_function_address_ordinal (module_base_address: i64, ordinal: u32) -> 
 /// # Examples
 ///
 /// ```
-/// let ntdll = dinvoke::get_module_base_address(&"ntdll.dll".to_string());
+/// let ntdll = dinvoke::get_module_base_address("ntdll.dll");
 ///
 /// if ntdll != 0
 /// {
 ///     let ordinal: u32 = 8; // Ordinal 8 represents the function RtlDispatchAPC
-///     let ret = dinvoke::ldr_get_procedure_address(ntdll,"".to_string(), 8);
+///     let ret = dinvoke::ldr_get_procedure_address(ntdll,"", 8);
 ///     match ret {
 ///         Ok(addr) => println!("The address where RtlDispatchAPC is located at is 0x{:X}.", addr),
 ///         Err(e) => println!("{}",e),
@@ -178,7 +178,7 @@ pub fn get_function_address_ordinal (module_base_address: i64, ordinal: u32) -> 
 ///     
 /// }
 /// ```
-pub fn ldr_get_procedure_address (module_handle: i64, function_name: String, ordinal: u32) -> Result<i64, String> {
+pub fn ldr_get_procedure_address (module_handle: i64, function_name: &str, ordinal: u32) -> Result<i64, String> {
 
     unsafe 
     {   
@@ -187,7 +187,7 @@ pub fn ldr_get_procedure_address (module_handle: i64, function_name: String, ord
         let module_base_address = get_module_base_address(&lc!("ntdll.dll")); 
         if module_base_address != 0
         {
-            let function_address = get_function_address(module_base_address, lc!("LdrGetProcedureAddress".to_string()));
+            let function_address = get_function_address(module_base_address, &lc!("LdrGetProcedureAddress"));
 
             if function_address != 0 
             {
@@ -203,7 +203,7 @@ pub fn ldr_get_procedure_address (module_handle: i64, function_name: String, ord
                 }
                 else 
                 {
-                    *fun_name = function_name;
+                    *fun_name = function_name.to_string();
                 }
 
                 let ret = func_ptr(hmodule, fun_name, ordinal, return_address);
@@ -235,14 +235,14 @@ pub fn ldr_get_procedure_address (module_handle: i64, function_name: String, ord
 /// # Examples
 ///
 /// ```
-/// let ret = dinvoke::load_library_a(&"ntdll.dll".to_string());
+/// let ret = dinvoke::load_library_a("ntdll.dll");
 ///
 ///  match ret {
 ///      Ok(addr) => if addr != 0 {println!("ntdll.dll base address is 0x{:X}.", addr)},
 ///      Err(e) => println!("{}",e),
 ///  }
 /// ```
-pub fn load_library_a(module: &String) -> Result<i64, String> {
+pub fn load_library_a(module: &str) -> Result<i64, String> {
 
     unsafe 
     {    
@@ -251,7 +251,7 @@ pub fn load_library_a(module: &String) -> Result<i64, String> {
         let mut result = HINSTANCE {0: 0 as isize};
         if module_base_address != 0
         {
-            let function_address = get_function_address(module_base_address, lc!("LoadLibraryA"));
+            let function_address = get_function_address(module_base_address, &lc!("LoadLibraryA"));
 
             if function_address != 0 
             {
@@ -281,7 +281,7 @@ pub fn load_library_a(module: &String) -> Result<i64, String> {
 /// # Examples
 ///
 /// ```ignore
-///    let pe = manualmap::read_and_map_module("c:\\some\\random\\file.dll".to_string()).unwrap();
+///    let pe = manualmap::read_and_map_module("c:\\some\\random\\file.dll").unwrap();
 ///    let ret = dinvoke::call_module_entry_point(&pe.0, pe.1);
 /// ```
 pub fn call_module_entry_point(pe_info: &PeMetadata, module_base_address: i64) -> Result<(), String> {
@@ -312,6 +312,56 @@ pub fn call_module_entry_point(pe_info: &PeMetadata, module_base_address: i64) -
     }
 }
 
+/// Dynamically calls an exported function from the specified module.
+///
+/// This macro will use the dinvoke crate functions to obtain an exported
+/// function address of the specified module in the runtime by walking process structures 
+/// and PE headers.
+///
+/// In case that this macro is used to call a dll entry point (DllMain), it will return true
+/// or false (using the 3rd argument passed to the macro) depending on the success of the call.
+/// In any other case, it will return the same data type that the called function would return
+/// using the 4th argument passed to the macro.
+///
+/// # Example - Calling a dll entry point
+///
+/// ```ignore
+/// let a = manualmap::read_and_map_module("c:\\some\\random\\file.dll").unwrap();
+/// let ret: bool = false;
+/// dinvoke::dynamic_invoke(&a.0, a.1, ret); // dinvoke::dynamic_invoke(&PeMetadata, i64, bool)
+/// if ret { println!("Entry point successfully called.");}
+/// ```
+/// # Example - Dynamically calling LoadLibraryA
+///
+/// ```ignore
+/// let kernel32 = manualmap::read_and_map_module("c:\\windows\\system32\\kernel32.dll").unwrap();
+/// let mut ret = HINSTANCE {0: 0 as isize};
+/// let function_ptr: data::LoadLibraryA;
+/// let name = CString::new("ntdll.dll").expect("CString::new failed");
+/// let module_name = PSTR{0: name.as_ptr() as *mut u8};
+/// //dinvoke::dynamic_invoke(i64,&str,<function_type>,Option<return_type>,[arguments])
+/// dinvoke::dynamic_invoke(a.1, "LoadLibraryA", function_ptr, ret, module_name);
+///
+/// if ret.0 != 0 { println!("ntdll base address is 0x{:X}",ret.0);}
+/// ```
+/// # Example - Dynamically calling with referenced arguments
+///
+/// ```ignore
+/// let ptr = dinvoke::get_module_base_address("ntdll.dll");
+/// let function_ptr: LdrGetProcedureAddress;
+/// let ret: Option<i32>;
+/// let hmodule: PVOID = std::mem::transmute(ptr);
+/// let fun_name: *mut String = ptr::null_mut();
+/// let ordinal = 8 as u32;
+/// let return_address: *mut c_void = std::mem::transmute(&u64::default());
+/// let return_address: *mut PVOID = std::mem::transmute(return_address);
+/// //dinvoke::dynamic_invoke(i64,&str,<function_type>,Option<return_type>,[arguments])
+/// dinvoke::dynamic_invoke!(ptr,"LdrGetProcedureAddress",function_ptr,ret,hmodule,fun_name,ordinal,return_address);
+/// match ret {
+///     Some(x) => if x == 0 {println!("RtlDispatchAPC is located at the address: 0x{:X}",*return_address as u64);},
+///     None => println!("Error calling LdrGetProcedureAddress"),
+/// }
+/// ```
 #[macro_export]
 macro_rules! dynamic_invoke {
 
@@ -327,7 +377,7 @@ macro_rules! dynamic_invoke {
 
     ($a:expr, $b:expr, $c:expr, $d:expr, $($e:tt)*) => {
 
-        let function_ptr = $crate::get_function_address($a, $b.to_string());
+        let function_ptr = $crate::get_function_address($a, $b);
         if function_ptr != 0
         {
             $c = std::mem::transmute(function_ptr);
