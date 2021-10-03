@@ -7,15 +7,13 @@ use std::collections::HashMap;
 use std::{fs, ptr};
 use std::mem::size_of;
 use std::ffi::c_void;
-use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PeMetadata, SECTION_MEM_EXECUTE, SECTION_MEM_READ, SECTION_MEM_WRITE};
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PVOID, PeMetadata, SECTION_MEM_EXECUTE, SECTION_MEM_READ, SECTION_MEM_WRITE};
 use litcrypt::lc;
 
 
 use bindings::{
-    Windows::Win32::System::Diagnostics::Debug::{WriteProcessMemory,IMAGE_OPTIONAL_HEADER32,IMAGE_SECTION_HEADER},
-    Windows::Win32::System::Memory::{VirtualAlloc,VirtualProtect,VIRTUAL_ALLOCATION_TYPE,PAGE_PROTECTION_FLAGS},
-    Windows::Win32::Foundation::HANDLE,
-    Windows::Win32::System::Threading::{GetCurrentProcess,NtQueryInformationProcess,PROCESS_BASIC_INFORMATION,PROCESSINFOCLASS},
+    Windows::Win32::System::Diagnostics::Debug::{IMAGE_OPTIONAL_HEADER32,IMAGE_SECTION_HEADER},
+    Windows::Win32::System::Threading::{GetCurrentProcess,PROCESS_BASIC_INFORMATION},
     Windows::Win32::System::SystemServices::{IMAGE_BASE_RELOCATION,IMAGE_IMPORT_DESCRIPTOR,IMAGE_THUNK_DATA32,IMAGE_THUNK_DATA64},
 };
 
@@ -77,13 +75,19 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,i64), Str
 
     unsafe 
     {
-        //let lpaddress: *mut c_void = std::mem::transmute(26673152 as u64);
-        let image_ptr = VirtualAlloc(
-            ptr::null_mut(),
-            dwsize, 
-            VIRTUAL_ALLOCATION_TYPE::from(MEM_COMMIT | MEM_RESERVE), 
-            PAGE_PROTECTION_FLAGS::from(PAGE_READWRITE)
-        );
+        let handle = GetCurrentProcess();
+        let base_address: *mut c_void = std::mem::transmute(&u64::default());
+        let base_address: *mut PVOID = std::mem::transmute(base_address);
+        let zero_bits = 0 as usize;
+        let size: *mut usize = std::mem::transmute(&dwsize);
+        let ret = dinvoke::nt_allocate_virtual_memory(handle, base_address, zero_bits, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        
+        if ret != 0
+        {
+            return Err(lc!("[x] Error allocating memory."));
+        }
+        
+        let image_ptr = *base_address;
 
         map_module_to_memory(file_ptr, image_ptr, &pe_info)?;
         
@@ -186,20 +190,14 @@ fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_info: 
     unsafe 
     {   
 
-        let hprocess = GetCurrentProcess();
-        let lpbaseaddress: *mut c_void = std::mem::transmute(image_ptr);
-        let lpbuffer: *const c_void = std::mem::transmute(module_ptr);
+        let handle = GetCurrentProcess();
+        let base_address: *mut c_void = std::mem::transmute(image_ptr);
+        let buffer: *mut c_void = std::mem::transmute(module_ptr);
         let written: u64 = 0;
-        let lpnumberofbyteswritten: *mut usize = std::mem::transmute(&written);
-        let write = WriteProcessMemory(
-            hprocess, 
-            lpbaseaddress, 
-            lpbuffer, 
-            nsize, 
-            lpnumberofbyteswritten
-        );
+        let bytes_written: *mut usize = std::mem::transmute(&written);
+        let ret = dinvoke::nt_write_virtual_memory(handle, base_address, buffer, nsize, bytes_written);
 
-        if !write.as_bool()
+        if ret != 0
         {
             return Err(lc!("[x] Error writing PE headers to the allocated memory."));
         }
@@ -208,18 +206,14 @@ fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_info: 
         {
             let section_base_ptr = (image_ptr as u64 + section.VirtualAddress as u64) as *mut u8;
             let section_content_ptr = (module_ptr as u64 + section.PointerToRawData as u64) as *mut u8;          
-            let lpbaseaddress: *mut c_void = std::mem::transmute(section_base_ptr);
-            let lpbuffer: *const c_void = std::mem::transmute(section_content_ptr);
-            let nsize = section.SizeOfRawData as usize;
-            let write = WriteProcessMemory(
-                hprocess, 
-                lpbaseaddress, 
-                lpbuffer, 
-                nsize, 
-                lpnumberofbyteswritten
-            );
 
-            if !write.as_bool() || *lpnumberofbyteswritten != nsize
+            let base_address: *mut c_void = std::mem::transmute(section_base_ptr);
+            let buffer: *mut c_void = std::mem::transmute(section_content_ptr);
+            let nsize = section.SizeOfRawData as usize;
+            let bytes_written: *mut usize = std::mem::transmute(&written);
+            let ret = dinvoke::nt_write_virtual_memory(handle, base_address, buffer, nsize, bytes_written);
+
+            if ret != 0 || *bytes_written != nsize
             {
                 return Err(lc!("[x] Failed to write PE sections to the allocated memory."))
             }
@@ -497,18 +491,16 @@ fn get_api_mapping() -> HashMap<String,String> {
 
     unsafe 
     {
-        let mut processhandle = HANDLE::default();
-        processhandle.0 = -1; 
-        let processinformation: *mut c_void = std::mem::transmute(&PROCESS_BASIC_INFORMATION::default());
-        let _err = NtQueryInformationProcess(
-            processhandle, 
-            PROCESSINFOCLASS::from(0), 
-            processinformation, 
+        let handle = GetCurrentProcess();
+        let process_information: *mut c_void = std::mem::transmute(&PROCESS_BASIC_INFORMATION::default());
+        let _ret = dinvoke::nt_query_information_process(
+            handle, 
+            0, 
+            process_information,  
             size_of::<PROCESS_BASIC_INFORMATION>() as u32, 
-            ptr::null_mut()
-        );
+            ptr::null_mut());
 
-        let process_information_ptr: *mut PROCESS_BASIC_INFORMATION = std::mem::transmute(processinformation);
+        let process_information_ptr: *mut PROCESS_BASIC_INFORMATION = std::mem::transmute(process_information);
 
         let api_set_map_offset:u64;
 
@@ -633,7 +625,7 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
             base_of_code = pe_info.opt_header_64.base_of_code as usize;
         }
 
-        let mut flnewprotect = PAGE_PROTECTION_FLAGS::default();
+        /*let mut flnewprotect = PAGE_PROTECTION_FLAGS::default();
         flnewprotect.0 = PAGE_READONLY;
         let lpfloldprotect: *mut PAGE_PROTECTION_FLAGS = std::mem::transmute(&PAGE_PROTECTION_FLAGS::default());
         VirtualProtect(
@@ -641,7 +633,14 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
             base_of_code, 
             flnewprotect, 
             lpfloldprotect
-        );
+        );*/
+
+        let handle = GetCurrentProcess();
+        let base_address: *mut PVOID = std::mem::transmute(image_ptr);
+        let size: *mut usize = std::mem::transmute(&i64::default());
+        *size = base_of_code;
+        let old_protection: *mut u32 = std::mem::transmute(&u32::default());
+        let _ret = dinvoke::nt_protect_virtual_memory(handle, base_address, size, PAGE_READONLY, old_protection);
 
         for section in &pe_info.sections
         {
@@ -675,17 +674,17 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
                 return Err(lc!("[x] Unknown section permission."));
             }
 
-            let lpaddress: *mut c_void = (image_ptr as u64 + section.VirtualAddress as u64) as *mut c_void;
-            let dwsize = section.Misc.VirtualSize as usize;
-            let mut flnewprotect = PAGE_PROTECTION_FLAGS::default();
-            flnewprotect.0 = new_protect;
-            let lpfloldprotect: *mut PAGE_PROTECTION_FLAGS = std::mem::transmute(&PAGE_PROTECTION_FLAGS::default());
-            VirtualProtect(
-                lpaddress, 
-                dwsize, 
-                flnewprotect, 
-                lpfloldprotect
-            );
+            let address: *mut c_void = (image_ptr as u64 + section.VirtualAddress as u64) as *mut c_void;
+            let base_address: *mut PVOID = std::mem::transmute(&address);
+            *size = section.Misc.VirtualSize as usize;
+            let old_protection: *mut u32 = std::mem::transmute(&u32::default());
+            let ret = dinvoke::nt_protect_virtual_memory(handle, base_address, size, new_protect, old_protection);
+
+            if ret != 0
+            {
+                return Err(lc!("[x] Error changing section permission."));
+            }
+
         }
 
         Ok(())

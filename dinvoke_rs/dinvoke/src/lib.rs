@@ -9,7 +9,7 @@ use libc::c_void;
 use litcrypt::lc;
 use winproc::Process;
 
-use bindings::Windows::Win32::Foundation::{HINSTANCE,PSTR};
+use bindings::Windows::Win32::Foundation::{HANDLE, HINSTANCE, PSTR};
 
 /// Retrieves the base address of a module loaded in the current process.
 ///
@@ -122,6 +122,42 @@ pub fn get_function_address(module_base_address: i64, function: &str) -> i64 {
     
         ret
 
+    }
+}
+
+/// Calls the module's entry point with the option DLL_ATTACH_PROCESS.
+///
+/// # Examples
+///
+/// ```ignore
+///    let pe = manualmap::read_and_map_module("c:\\some\\random\\file.dll").unwrap();
+///    let ret = dinvoke::call_module_entry_point(&pe.0, pe.1);
+/// ```
+pub fn call_module_entry_point(pe_info: &PeMetadata, module_base_address: i64) -> Result<(), String> {
+
+    let entry_point;
+    if pe_info.is_32_bit 
+    {
+        entry_point = module_base_address + pe_info.opt_header_32.AddressOfEntryPoint as i64;
+    }
+    else 
+    {
+        entry_point = module_base_address + pe_info.opt_header_64.address_of_entry_point as i64;
+
+    }
+
+    unsafe 
+    {
+        let main: EntryPoint = std::mem::transmute(entry_point);
+        let module = HINSTANCE {0: entry_point as isize};
+        let ret = main(module, DLL_PROCESS_ATTACH, ptr::null_mut());
+
+        if !ret.as_bool()
+        {
+            return Err(lc!("[x] Failed to call module's entry point (DllMain -> DLL_PROCESS_ATTACH)."));
+        }
+
+        Ok(())
     }
 }
 
@@ -276,40 +312,78 @@ pub fn load_library_a(module: &str) -> Result<i64, String> {
 
 }
 
-/// Calls the module's entry point with the option DLL_ATTACH_PROCESS.
+/// Dynamically calls NtWriteVirtualMemory.
 ///
-/// # Examples
-///
-/// ```ignore
-///    let pe = manualmap::read_and_map_module("c:\\some\\random\\file.dll").unwrap();
-///    let ret = dinvoke::call_module_entry_point(&pe.0, pe.1);
-/// ```
-pub fn call_module_entry_point(pe_info: &PeMetadata, module_base_address: i64) -> Result<(), String> {
-
-    let entry_point;
-    if pe_info.is_32_bit 
-    {
-        entry_point = module_base_address + pe_info.opt_header_32.AddressOfEntryPoint as i64;
-    }
-    else 
-    {
-        entry_point = module_base_address + pe_info.opt_header_64.address_of_entry_point as i64;
-
-    }
+/// It will return the NTSTATUS value returned by the call.
+pub fn nt_write_virtual_memory (handle: HANDLE, base_address: PVOID, buffer: PVOID, size: usize, bytes_written: *mut usize) -> i32 {
 
     unsafe 
     {
-        let main: EntryPoint = std::mem::transmute(entry_point);
-        let module = HINSTANCE {0: entry_point as isize};
-        let ret = main(module, DLL_PROCESS_ATTACH, ptr::null_mut());
+        let ret;
+        let func_ptr: data::NtWriteVirtualMemory;
+        let ntdll = get_module_base_address("ntdll.dll");
+        dynamic_invoke!(ntdll,"NtWriteVirtualMemory",func_ptr,ret,handle,base_address,buffer,size,bytes_written);
 
-        if !ret.as_bool()
-        {
-            return Err(lc!("[x] Failed to call module's entry point (DllMain -> DLL_PROCESS_ATTACH)."));
+        match ret {
+            Some(x) => return x,
+            None => return -1,
         }
-
-        Ok(())
     }
+
+}
+
+/// Dynamically calls NtAllocateVirtualMemory.
+///
+/// It will return the NTSTATUS value returned by the call.
+pub fn nt_allocate_virtual_memory (handle: HANDLE, base_address: *mut PVOID, zero_bits: usize, size: *mut usize, allocation_type: u32, protection: u32) -> i32 {
+
+    unsafe 
+    {
+        let ret;
+        let func_ptr: data::NtAllocateVirtualMemory;
+        let ntdll = get_module_base_address("ntdll.dll");
+        dynamic_invoke!(ntdll,"NtAllocateVirtualMemory",func_ptr,ret,handle,base_address,zero_bits,size,allocation_type,protection);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    }   
+}
+
+/// Dynamically calls NtProtectVirtualMemory.
+///
+/// It will return the NTSTATUS value returned by the call.
+pub fn nt_protect_virtual_memory (handle: HANDLE, base_address: *mut PVOID, size: *mut usize, new_protection: u32, old_protection: *mut u32) -> i32 {
+    
+    unsafe 
+    {
+        let ret;
+        let func_ptr: data::NtProtectVirtualMemory;
+        let ntdll = get_module_base_address("ntdll.dll");
+        dynamic_invoke!(ntdll,"NtProtectVirtualMemory",func_ptr,ret,handle,base_address,size,new_protection,old_protection);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    } 
+}
+
+pub fn nt_query_information_process (handle: HANDLE, process_information_class: u32, process_information: PVOID, length: u32, return_length: *mut u32) -> i32 {
+    
+    unsafe 
+    {
+        let ret;
+        let func_ptr: data::NtQueryInformationProcess;
+        let ntdll = get_module_base_address("ntdll.dll");
+        dynamic_invoke!(ntdll,"NtQueryInformationProcess",func_ptr,ret,handle,process_information_class,process_information,length,return_length);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    } 
 }
 
 /// Dynamically calls an exported function from the specified module.
