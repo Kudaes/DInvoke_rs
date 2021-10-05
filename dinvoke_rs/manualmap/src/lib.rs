@@ -7,7 +7,9 @@ use std::collections::HashMap;
 use std::{fs, ptr};
 use std::mem::size_of;
 use std::ffi::c_void;
-use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, NtQueryInformationProcess, PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PVOID, PeMetadata, SECTION_MEM_EXECUTE, SECTION_MEM_READ, SECTION_MEM_WRITE};
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, 
+    PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PVOID, PeMetadata, SECTION_MEM_EXECUTE, SECTION_MEM_READ, 
+    SECTION_MEM_WRITE};
 use litcrypt::lc;
 
 

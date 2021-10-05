@@ -125,13 +125,40 @@ pub fn get_function_address(module_base_address: i64, function: &str) -> i64 {
     }
 }
 
+/// Returns a BTreeMap<i64,String> composed of pairs (memory address, function name)
+/// with all the Nt exported functions on ntdll.dll. 
+///
+/// This functions will only return valid data if the parameter passed is the base address of
+/// ntdll.dll. This function is usefull to dynamically get a syscall id as it is shown in the
+/// example.
+///
+/// # Examples
+///
+/// ```
+/// let ntdll = dinvoke::get_module_base_address("ntdll.dll");
+///
+/// if ntdll != 0
+/// {
+///     let eat = dinvoke::get_ntdll_eat(ntdll);  
+///     let mut j = 0;  
+///     for (a,b) in eat.iter()
+///     {
+///         if b == "NtCreateThreadEx"
+///         {
+///             println!("The syscall id for NtCreateThreadEx is {}.",j);
+///             break;
+///         }
+///         j = j + 1;
+///     }
+/// }
+/// ```
 pub fn get_ntdll_eat(module_base_address: i64) -> EAT {
 
     unsafe
     {
         let mut eat:EAT = EAT::default();
 
-        let mut function_ptr:*mut i32 = ptr::null_mut();
+        let mut function_ptr:*mut i32;
         let pe_header = *((module_base_address + 0x3C) as *mut i32);
         let opt_header: i64 = module_base_address + (pe_header as i64) + 0x18;
         let magic = *(opt_header as *mut i16);
@@ -183,6 +210,27 @@ pub fn get_ntdll_eat(module_base_address: i64) -> EAT {
     }
 }
 
+/// Returns the syscall id that correspond to the function specified.
+///
+/// This functions will return -1 in case that the syscall id of the function
+/// specified could not be found.
+///
+/// # Examples
+///
+/// ```
+/// let ntdll = dinvoke::get_module_base_address("ntdll.dll");
+///
+/// if ntdll != 0
+/// {
+///     let eat = dinvoke::get_ntdll_eat(ntdll);  
+///     let id = dinvoke::get_syscall_id(eat, "NtCreateThreadEx");
+///     
+///     if id != -1
+///     {
+///         println!("The syscall id for NtCreateThreadEx is {}.",id);
+///     }
+/// }
+/// ```
 pub fn get_syscall_id(eat:EAT, function_name: &str) -> i32 {
 
     let mut i = 0;
@@ -199,15 +247,38 @@ pub fn get_syscall_id(eat:EAT, function_name: &str) -> i32 {
     -1
 }
 
+/// Given a valid syscall id, it will allocate the required shellcode to execute 
+/// that specific syscall.
+///
+/// This functions will return the memory address where the shellcode has been written. If any 
+/// error has ocurred, it will return 0.
+///
+/// # Examples
+///
+/// ```
+/// let ntdll = dinvoke::get_module_base_address("ntdll.dll");
+///
+/// if ntdll != 0
+/// {
+///     let eat = dinvoke::get_ntdll_eat(ntdll);  
+///     let id = dinvoke::get_syscall_id(eat, "NtCreateThreadEx");
+///     
+///     if id != -1
+///     {
+///         let addr = dinvoke::prepare_syscall(id as u32);
+///         println!("NtCreateThreadEx syscall ready to be executed at address 0x{:X}", addr);
+///     }
+/// }
+/// ```
 pub fn prepare_syscall(id: u32) -> i64 {
 
-    let mut sh: Vec<u8> = 
+    let mut sh: [u8;11] = 
     [ 
         0x4C, 0x8B, 0xD1,
         0xB8, 0x00, 0x00, 0x00, 0x00,
         0x0F, 0x05,
         0xC3
-    ].to_vec();
+    ];
 
     unsafe 
     {
@@ -601,19 +672,34 @@ macro_rules! dynamic_invoke {
     };
 }
 
-/* let handle = GetCurrentProcess();
-        let process_information: *mut c_void = std::mem::transmute(&PROCESS_BASIC_INFORMATION::default());
-        let _ret = dinvoke::nt_query_information_process(
-            handle, 
-            0, 
-            process_information,  
-            size_of::<PROCESS_BASIC_INFORMATION>() as u32, 
-            ptr::null_mut());
-        
-        let p:NtQueryInformationProcess;
-        let mut s: Option<i32> = None;
-        dinvoke::execute_syscall!("NtQueryInformationProcess",p,s,handle,0,process_information,size_of::<PROCESS_BASIC_INFORMATION>() as u32,ptr::null_mut());
-*/
+/// Dynamically execute a direct syscall.
+///
+/// This function expects as parameters the name of the Nt function whose syscall 
+/// wants to be executed, a variable with the function header, an Option variable with the same
+/// inner type that the original syscall would return and all the parameters expected by the syscall.
+///
+/// # Examples - Executing NtQueryInformationProcess with direct syscall
+///
+/// ```ignore      
+/// let function_type:NtQueryInformationProcess;
+/// let mut ret: Option<i32> = None; //NtQueryInformationProcess returns a NTSTATUS, which is a i32.
+/// let handle = GetCurrentProcess();
+/// let process_information: *mut c_void = std::mem::transmute(&PROCESS_BASIC_INFORMATION::default()); 
+/// dinvoke::execute_syscall!(
+///     "NtQueryInformationProcess",
+///     function_type,
+///     ret,
+///     handle,
+///     0,
+///     process_information,
+///     size_of::<PROCESS_BASIC_INFORMATION>() as u32,
+///     ptr::null_mut()
+/// );
+/// match ret {
+///     Some(x) => if x == 0 {println!("Process information struct available at address 0x{:X}",process_information as u64);},
+///     None => println!("Error executing direct syscall for NtQueryInformationProcess."),
+/// }
+/// ```
 #[macro_export]
 macro_rules! execute_syscall {
 
