@@ -1,8 +1,9 @@
-use std::ffi::c_void;
+use std::{collections::BTreeMap, ffi::c_void};
 
 use bindings::Windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, PSTR}, System::Diagnostics::Debug::{IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, IMAGE_DATA_DIRECTORY}};
 
 pub type PVOID = *mut c_void;
+pub type EAT = BTreeMap<i64,String>;
 pub type EntryPoint =  extern "system" fn (HINSTANCE, u32, *mut c_void) -> BOOL;
 pub type LoadLibraryA = extern "system" fn (PSTR) -> HINSTANCE;
 pub type LdrGetProcedureAddress = unsafe extern "system" fn (PVOID, *mut String, u32, *mut PVOID) -> i32;

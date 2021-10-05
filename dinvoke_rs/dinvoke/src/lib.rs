@@ -4,12 +4,13 @@ use_litcrypt!();
 
 use std::ptr;
 use std::ffi::CString;
-use data::{DLL_PROCESS_ATTACH, EntryPoint, LdrGetProcedureAddress, LoadLibraryA, PeMetadata, PVOID};
+use data::{DLL_PROCESS_ATTACH, EAT, EntryPoint, LdrGetProcedureAddress, LoadLibraryA, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, PVOID, PeMetadata};
 use libc::c_void;
 use litcrypt::lc;
 use winproc::Process;
 
-use bindings::Windows::Win32::Foundation::{HANDLE, HINSTANCE, PSTR};
+use bindings::Windows::Win32::{Foundation::{HANDLE, HINSTANCE, PSTR}, {System::Threading::{GetCurrentProcess}}};
+
 
 /// Retrieves the base address of a module loaded in the current process.
 ///
@@ -45,7 +46,7 @@ pub fn get_module_base_address (module_name: &str) -> i64
 /// Retrieves the address of an exported function from the specified module.
 ///
 /// This functions is analogous to GetProcAddress from Win32. The exported 
-/// function's address is obtained by walking and parsing the PE headers of the  
+/// function's address is obtained by walking and parsing the EAT of the  
 /// specified module.
 ///
 /// In case that the function's address can't be retrieved, it will return 0.
@@ -62,12 +63,11 @@ pub fn get_module_base_address (module_name: &str) -> i64
 /// }
 /// ```
 pub fn get_function_address(module_base_address: i64, function: &str) -> i64 {
-    
-    let mut function_ptr:*mut i32 = ptr::null_mut();
 
     unsafe
     {
-
+        
+        let mut function_ptr:*mut i32 = ptr::null_mut();
         let pe_header = *((module_base_address + 0x3C) as *mut i32);
         let opt_header: i64 = module_base_address + (pe_header as i64) + 0x18;
         let magic = *(opt_header as *mut i16);
@@ -123,6 +123,134 @@ pub fn get_function_address(module_base_address: i64, function: &str) -> i64 {
         ret
 
     }
+}
+
+pub fn get_ntdll_eat(module_base_address: i64) -> EAT {
+
+    unsafe
+    {
+        let mut eat:EAT = EAT::default();
+
+        let mut function_ptr:*mut i32 = ptr::null_mut();
+        let pe_header = *((module_base_address + 0x3C) as *mut i32);
+        let opt_header: i64 = module_base_address + (pe_header as i64) + 0x18;
+        let magic = *(opt_header as *mut i16);
+        let p_export: i64;
+
+        if magic == 0x010b 
+        {
+            p_export = opt_header + 0x60;
+        } 
+        else 
+        {
+            p_export = opt_header + 0x70;
+        }
+
+        let export_rva = *(p_export as *mut i32);
+        let ordinal_base = *((module_base_address + export_rva as i64 + 0x10) as *mut i32);
+        let number_of_names = *((module_base_address + export_rva as i64 + 0x18) as *mut i32);
+        let functions_rva = *((module_base_address + export_rva as i64 + 0x1C) as *mut i32);
+        let names_rva = *((module_base_address + export_rva as i64 + 0x20) as *mut i32);
+        let ordinals_rva = *((module_base_address + export_rva as i64 + 0x24) as *mut i32);
+
+        for x in 0..number_of_names 
+        {
+
+            let address = *((module_base_address + names_rva as i64 + x as i64 * 4) as *mut i32);
+            let mut function_name_ptr = (module_base_address + address as i64) as *mut u8;
+            let mut function_name: String = "".to_string();
+
+            while *function_name_ptr as char != '\0' // null byte
+            { 
+                function_name.push(*function_name_ptr as char);
+                function_name_ptr = function_name_ptr.add(1);
+            }
+
+            if function_name.starts_with("Zw")
+            {
+                let function_ordinal = *((module_base_address + ordinals_rva as i64 + x as i64 * 2) as *mut i16) as i32 + ordinal_base;
+                let function_rva = *(((module_base_address + functions_rva as i64 + (4 * (function_ordinal - ordinal_base)) as i64 )) as *mut i32);
+                function_ptr = (module_base_address + function_rva as i64) as *mut i32;
+
+                function_name = function_name.replace("Zw", "Nt");
+                eat.insert(function_ptr as i64,function_name );
+            }
+
+        }
+    
+        eat
+
+    }
+}
+
+pub fn get_syscall_id(eat:EAT, function_name: &str) -> i32 {
+
+    let mut i = 0;
+    for (_a,b) in eat.iter()
+    {
+        if b == function_name
+        {
+            return i;
+        }
+
+        i = i + 1;
+    }
+
+    -1
+}
+
+pub fn prepare_syscall(id: u32) -> i64 {
+
+    let mut sh: Vec<u8> = 
+    [ 
+        0x4C, 0x8B, 0xD1,
+        0xB8, 0x00, 0x00, 0x00, 0x00,
+        0x0F, 0x05,
+        0xC3
+    ].to_vec();
+
+    unsafe 
+    {
+        let mut ptr: *mut u8 = std::mem::transmute(&id);
+
+        for i in 0..4
+        {
+            sh[4 + i] = *ptr;
+            ptr = ptr.add(1);
+        }
+
+        let handle = GetCurrentProcess();
+        let base_address: *mut PVOID = std::mem::transmute(&u64::default());
+        let nsize: usize = sh.len() as usize;
+        let size: *mut usize = std::mem::transmute(&nsize);
+        let old_protection: *mut u32 = std::mem::transmute(&u32::default());
+        let ret = nt_allocate_virtual_memory(handle, base_address, 0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        
+        if ret != 0
+        {
+            return 0;
+        }
+        
+        let buffer: *mut c_void = std::mem::transmute(sh.as_ptr());
+        let bytes_written: *mut usize = std::mem::transmute(&usize::default());
+        let ret = nt_write_virtual_memory(handle, *base_address, buffer, nsize, bytes_written);
+
+        if ret != 0
+        {
+            return 0;
+        }
+
+        let ret = nt_protect_virtual_memory(handle, base_address, size, PAGE_EXECUTE_READ, old_protection);
+
+        if ret != 0
+        {
+            return 0;
+        }
+
+        *base_address as i64
+    }
+
+
 }
 
 /// Calls the module's entry point with the option DLL_ATTACH_PROCESS.
@@ -370,6 +498,9 @@ pub fn nt_protect_virtual_memory (handle: HANDLE, base_address: *mut PVOID, size
     } 
 }
 
+/// Dynamically calls NtQueryInformationProcess.
+///
+/// It will return the NTSTATUS value returned by the call.
 pub fn nt_query_information_process (handle: HANDLE, process_information_class: u32, process_information: PVOID, length: u32, return_length: *mut u32) -> i32 {
     
     unsafe 
@@ -409,14 +540,17 @@ pub fn nt_query_information_process (handle: HANDLE, process_information_class: 
 ///
 /// ```ignore
 /// let kernel32 = manualmap::read_and_map_module("c:\\windows\\system32\\kernel32.dll").unwrap();
-/// let mut ret = HINSTANCE {0: 0 as isize};
+/// let mut ret:Option<HINSTANCE>;
 /// let function_ptr: data::LoadLibraryA;
 /// let name = CString::new("ntdll.dll").expect("CString::new failed");
 /// let module_name = PSTR{0: name.as_ptr() as *mut u8};
 /// //dinvoke::dynamic_invoke(i64,&str,<function_type>,Option<return_type>,[arguments])
 /// dinvoke::dynamic_invoke(a.1, "LoadLibraryA", function_ptr, ret, module_name);
 ///
-/// if ret.0 != 0 { println!("ntdll base address is 0x{:X}",ret.0);}
+/// match ret {
+///     Some(x) => if x.0 == 0 {println!("ntdll base address is 0x{:X}",x.0);},
+///     None => println!("Error calling LdrGetProcedureAddress"),
+/// }
 /// ```
 /// # Example - Dynamically calling with referenced arguments
 ///
@@ -431,6 +565,7 @@ pub fn nt_query_information_process (handle: HANDLE, process_information_class: 
 /// let return_address: *mut PVOID = std::mem::transmute(return_address);
 /// //dinvoke::dynamic_invoke(i64,&str,<function_type>,Option<return_type>,[arguments])
 /// dinvoke::dynamic_invoke!(ptr,"LdrGetProcedureAddress",function_ptr,ret,hmodule,fun_name,ordinal,return_address);
+///
 /// match ret {
 ///     Some(x) => if x == 0 {println!("RtlDispatchAPC is located at the address: 0x{:X}",*return_address as u64);},
 ///     None => println!("Error calling LdrGetProcedureAddress"),
@@ -440,6 +575,7 @@ pub fn nt_query_information_process (handle: HANDLE, process_information_class: 
 macro_rules! dynamic_invoke {
 
     ($a:expr, $b:expr, $c:expr) => {
+        
         let ret = $crate::call_module_entry_point(&$a,$b);
 
         match ret {
@@ -463,4 +599,38 @@ macro_rules! dynamic_invoke {
         }
 
     };
+}
+
+/* let handle = GetCurrentProcess();
+        let process_information: *mut c_void = std::mem::transmute(&PROCESS_BASIC_INFORMATION::default());
+        let _ret = dinvoke::nt_query_information_process(
+            handle, 
+            0, 
+            process_information,  
+            size_of::<PROCESS_BASIC_INFORMATION>() as u32, 
+            ptr::null_mut());
+        
+        let p:NtQueryInformationProcess;
+        let mut s: Option<i32> = None;
+        dinvoke::execute_syscall!("NtQueryInformationProcess",p,s,handle,0,process_information,size_of::<PROCESS_BASIC_INFORMATION>() as u32,ptr::null_mut());
+*/
+#[macro_export]
+macro_rules! execute_syscall {
+
+    ($a:expr, $b:expr, $c:expr, $($d:tt)*) => {
+
+        let eat = $crate::get_ntdll_eat($crate::get_module_base_address("ntdll.dll"));
+        let id = $crate::get_syscall_id(eat, $a);
+        if id != -1
+        {
+            let function_ptr = $crate::prepare_syscall(id as u32);
+            $b = std::mem::transmute(function_ptr);
+            $c = Some($b($($d)*));
+        }
+        else
+        {
+            $c = None;
+        }
+
+    }
 }

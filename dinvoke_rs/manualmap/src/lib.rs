@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::{fs, ptr};
 use std::mem::size_of;
 use std::ffi::c_void;
-use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PVOID, PeMetadata, SECTION_MEM_EXECUTE, SECTION_MEM_READ, SECTION_MEM_WRITE};
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, NtQueryInformationProcess, PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PVOID, PeMetadata, SECTION_MEM_EXECUTE, SECTION_MEM_READ, SECTION_MEM_WRITE};
 use litcrypt::lc;
 
 
@@ -76,8 +76,7 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,i64), Str
     unsafe 
     {
         let handle = GetCurrentProcess();
-        let base_address: *mut c_void = std::mem::transmute(&u64::default());
-        let base_address: *mut PVOID = std::mem::transmute(base_address);
+        let base_address: *mut PVOID = std::mem::transmute(&u64::default());
         let zero_bits = 0 as usize;
         let size: *mut usize = std::mem::transmute(&dwsize);
         let ret = dinvoke::nt_allocate_virtual_memory(handle, base_address, zero_bits, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -138,14 +137,12 @@ pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String> {
 
         if pe_arch == 0x010B
         {
-            println!("[-] x32 image found.");
             pe_metadata.is_32_bit = true;
             let opt_header_content: *const IMAGE_OPTIONAL_HEADER32 = std::mem::transmute(opt_header);
             pe_metadata.opt_header_32 = *opt_header_content;
         }
         else if pe_arch == 0x020B 
         {
-            println!("[-] x64 image found.");
             pe_metadata.is_32_bit = false;
             let opt_header_content: *const IMAGE_OPTIONAL_HEADER64 = std::mem::transmute(opt_header);
             pe_metadata.opt_header_64 = *opt_header_content;
@@ -499,7 +496,7 @@ fn get_api_mapping() -> HashMap<String,String> {
             process_information,  
             size_of::<PROCESS_BASIC_INFORMATION>() as u32, 
             ptr::null_mut());
-
+    
         let process_information_ptr: *mut PROCESS_BASIC_INFORMATION = std::mem::transmute(process_information);
 
         let api_set_map_offset:u64;
@@ -624,16 +621,6 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
         {
             base_of_code = pe_info.opt_header_64.base_of_code as usize;
         }
-
-        /*let mut flnewprotect = PAGE_PROTECTION_FLAGS::default();
-        flnewprotect.0 = PAGE_READONLY;
-        let lpfloldprotect: *mut PAGE_PROTECTION_FLAGS = std::mem::transmute(&PAGE_PROTECTION_FLAGS::default());
-        VirtualProtect(
-            image_ptr, 
-            base_of_code, 
-            flnewprotect, 
-            lpfloldprotect
-        );*/
 
         let handle = GetCurrentProcess();
         let base_address: *mut PVOID = std::mem::transmute(image_ptr);
