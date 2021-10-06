@@ -588,6 +588,25 @@ pub fn nt_query_information_process (handle: HANDLE, process_information_class: 
     } 
 }
 
+/// Dynamically calls RtlAdjustPrivilege.
+///
+/// It will return the NTSTATUS value returned by the call.
+pub fn rtl_adjust_privilege(privilege: u32, enable: u8, current_thread: u8, enabled: *mut u8) -> i32 {
+    
+    unsafe 
+    {
+        let ret;
+        let func_ptr: data::RtlAdjustPrivilege;
+        let ntdll = get_module_base_address("ntdll.dll");
+        dynamic_invoke!(ntdll,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    } 
+}
+
 /// Dynamically calls an exported function from the specified module.
 ///
 /// This macro will use the dinvoke crate functions to obtain an exported
