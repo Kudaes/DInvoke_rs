@@ -26,8 +26,8 @@ I just created this port as a way to learn Rust myself and with the idea of faci
 The example below demonstrates how to use DInvoke_rs to dynamically find and call exports of a DLL.
 
 1) Get the base address of ntdll.dll by walking the Process Environment Block.
-2) Use get_function_address to find an export within ntdll.dll by name. This is done by walking and parsing the module's EAT.
-3) Use get_function_address_by_ordinal to find an export within ntdll.dll by ordinal. This is done by dynamically calling LdrGetProcedureAddress.
+2) Use get_function_address() to find an export within ntdll.dll by name. This is done by walking and parsing the module's EAT.
+3) Use get_function_address_by_ordinal() to find an export within ntdll.dll by ordinal. This is done by dynamically calling LdrGetProcedureAddress.
 
 ```rust
 
@@ -94,7 +94,7 @@ fn main() {
 ```
 
 # Example 3 - Executing direct syscall
-In the next example, we use DInvoke_rs to execute the syscall that correspond to function NtQueryInformationProcess. Since the macro dinvoke::execute_syscall!() dynamically allocates and executes the shellcode required to execute the desired syscall, all hooks present in ntdll.dll are bypassed.
+In the next example, we use DInvoke_rs to execute the syscall that corresponds to function NtQueryInformationProcess. Since the macro dinvoke::execute_syscall!() dynamically allocates and executes the shellcode required to execute the desired syscall, all hooks present in ntdll.dll are bypassed.
 
 ```rust
 
@@ -128,7 +128,7 @@ fn main() {
 	            if x == 0 {
 	                pbi = std::mem::transmute(process_information);
 	                let pbi = *pbi;
-	                println!("The Process Environment Block base address is at 0x{:X}", pbi.PebBaseAddress as u64);
+	                println!("The Process Environment Block base address is 0x{:X}", pbi.PebBaseAddress as u64);
 	            },
             None => println!("[x] Error executing direct syscall for NtQueryInformationProcess."),
         }  
@@ -139,7 +139,8 @@ fn main() {
 
 # Example 4 - Manual PE mapping
 In this last example, DInvoke_rs is used to manually map a fresh copy of ntdll.dll, without any EDR hooks. Then that fresh ntdll.dll copy can be used to execute any desired function. 
-This manual map can also be executed from memory (use manualmap::manually_map_module() in that case), allowing the classic reflective dll injection.
+
+This manual map can also be executed from memory (use manually_map_module() in that case), allowing the classic reflective dll injection.
 
 ```rust
 
