@@ -416,7 +416,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
                         else 
                         {
                             let f_ordinal = (image_thunk_data.u1.AddressOfData & 0xFFFF) as u32;
-                            let func_ptr = dinvoke::get_function_address_ordinal(module_handle as i64, f_ordinal);
+                            let func_ptr = dinvoke::get_function_address_by_ordinal(module_handle as i64, f_ordinal);
                             let func_ptr = func_ptr as *mut i32;
                             *ft_itd = func_ptr as i32;
                         }
@@ -466,7 +466,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
                         {
      
                             let f_ordinal = (image_thunk_data.u1.AddressOfData & 0xFFFF) as u32;
-                            let func_ptr = dinvoke::get_function_address_ordinal(module_handle as i64, f_ordinal);
+                            let func_ptr = dinvoke::get_function_address_by_ordinal(module_handle as i64, f_ordinal);
                             *ft_itd = func_ptr as i64;
                         }
 

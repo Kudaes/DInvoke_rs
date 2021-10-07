@@ -293,7 +293,7 @@ pub fn prepare_syscall(id: u32) -> i64 {
         let handle = GetCurrentProcess();
         let base_address: *mut PVOID = std::mem::transmute(&u64::default());
         let nsize: usize = sh.len() as usize;
-        let size: *mut usize = std::mem::transmute(&nsize);
+        let size: *mut usize = std::mem::transmute(&(nsize+1));
         let old_protection: *mut u32 = std::mem::transmute(&u32::default());
         let ret = nt_allocate_virtual_memory(handle, base_address, 0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         
@@ -305,7 +305,8 @@ pub fn prepare_syscall(id: u32) -> i64 {
         let buffer: *mut c_void = std::mem::transmute(sh.as_ptr());
         let bytes_written: *mut usize = std::mem::transmute(&usize::default());
         let ret = nt_write_virtual_memory(handle, *base_address, buffer, nsize, bytes_written);
-
+        println!("{}",*bytes_written);
+        println!("{:X}",ret as u32);
         if ret != 0
         {
             return 0;
@@ -373,12 +374,12 @@ pub fn call_module_entry_point(pe_info: &PeMetadata, module_base_address: i64) -
 ///
 /// if ntdll != 0
 /// {
-///     let ordinal: u32 = 8; // Ordinal 8 represents the function RtlDispatchAPC
+///     let ordinal: u32 = 8; 
 ///     let addr = dinvoke::get_function_address_ordinal(ntdll, 8);    
-///     println!("The address where RtlDispatchAPC is located at is 0x{:X}.", addr);
+///     println!("The function with ordinal 8 is located at 0x{:X}.", addr);
 /// }
 /// ```
-pub fn get_function_address_ordinal (module_base_address: i64, ordinal: u32) -> i64 {
+pub fn get_function_address_by_ordinal(module_base_address: i64, ordinal: u32) -> i64 {
 
     let ret = ldr_get_procedure_address(module_base_address, "", ordinal);
 
@@ -704,6 +705,7 @@ macro_rules! dynamic_invoke {
 /// let mut ret: Option<i32> = None; //NtQueryInformationProcess returns a NTSTATUS, which is a i32.
 /// let handle = GetCurrentProcess();
 /// let process_information: *mut c_void = std::mem::transmute(&PROCESS_BASIC_INFORMATION::default()); 
+/// let return_length: *mut u32 = std::mem::transmute(&u32::default());
 /// dinvoke::execute_syscall!(
 ///     "NtQueryInformationProcess",
 ///     function_type,
@@ -712,7 +714,7 @@ macro_rules! dynamic_invoke {
 ///     0,
 ///     process_information,
 ///     size_of::<PROCESS_BASIC_INFORMATION>() as u32,
-///     ptr::null_mut()
+///     return_length
 /// );
 /// match ret {
 ///     Some(x) => if x == 0 {println!("Process information struct available at address 0x{:X}",process_information as u64);},
@@ -729,8 +731,15 @@ macro_rules! execute_syscall {
         if id != -1
         {
             let function_ptr = $crate::prepare_syscall(id as u32);
-            $b = std::mem::transmute(function_ptr);
-            $c = Some($b($($d)*));
+            if function_ptr != 0
+            {
+                $b = std::mem::transmute(function_ptr);
+                $c = Some($b($($d)*));
+            }
+            else
+            {
+                $c = None;
+            }
         }
         else
         {
