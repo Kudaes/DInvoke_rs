@@ -19,7 +19,7 @@ All the credits go to the creators of the original C# implementation of this too
 * [FuzzySec (b33f)](https://twitter.com/FuzzySec)
 * [cobbr](https://twitter.com/cobbr_io)
 
-I just created this port as a way to learn Rust myself and with the idea of facilitate to the Red Team community the transition from more common and known languages (like C++ or C#) to Rust for their hacking tools.  
+I just created this port as a way to learn Rust myself and with the idea of facilitate to the Red Team community the transition from more common and known languages (like C++ or C#) to Rust to develop their hacking tools.  
 
 # Example 1 - Resolving Exported Unmanaged APIs
 
