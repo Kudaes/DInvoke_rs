@@ -81,8 +81,9 @@ fn main() {
             dinvoke::dynamic_invoke!(ntdll,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled);
     
             match ret {
-                Some(x) => if x == 0 { println!("NTSTATUS == Success. Privilege enabled."); } 
-                    else { println!("[x] NTSTATUS == {:X}", x as u32); },
+                Some(x) => 
+                	if x == 0 { println!("NTSTATUS == Success. Privilege enabled."); } 
+                  	else { println!("[x] NTSTATUS == {:X}", x as u32); },
                 None => panic!("[x] Error!"),
             }
         } 
@@ -124,11 +125,11 @@ fn main() {
         let pbi:*mut PROCESS_BASIC_INFORMATION;
         match ret {
             Some(x) => 
-            if x == 0 {
-                pbi = std::mem::transmute(process_information);
-                let pbi = *pbi;
-                println!("The Process Environment Block base address is at 0x{:X}", pbi.PebBaseAddress as u64);
-            },
+	            if x == 0 {
+	                pbi = std::mem::transmute(process_information);
+	                let pbi = *pbi;
+	                println!("The Process Environment Block base address is at 0x{:X}", pbi.PebBaseAddress as u64);
+	            },
             None => println!("[x] Error executing direct syscall for NtQueryInformationProcess."),
         }  
 
@@ -137,7 +138,8 @@ fn main() {
 ```
 
 # Example 4 - Manual PE mapping
-In this last example, DInvoke_rs is used to manually map a fresh copy of ntdll.dll, without any EDR hooks. Then that fresh ntdll.dll copy can be used to execute any desired function. This manual map can also be executed from memory (use manualmap::manually_map_module() for that use), allowing the classic reflective dll injection.
+In this last example, DInvoke_rs is used to manually map a fresh copy of ntdll.dll, without any EDR hooks. Then that fresh ntdll.dll copy can be used to execute any desired function. 
+This manual map can also be executed from memory (use manualmap::manually_map_module() in that case), allowing the classic reflective dll injection.
 
 ```rust
 
@@ -158,8 +160,8 @@ fn main() {
 
         match ret {
             Some(x) => 
-            if x == 0 { println!("NTSTATUS == Success. Privilege enabled."); } 
-            else { println!("[x] NTSTATUS == {:X}", x as u32); },
+	            if x == 0 { println!("NTSTATUS == Success. Privilege enabled."); } 
+	            else { println!("[x] NTSTATUS == {:X}", x as u32); },
             None => panic!("[x] Error!"),
         }
 
