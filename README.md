@@ -102,7 +102,7 @@ fn main() {
 ```
 
 # Example 3 - Executing direct syscall
-In the next example, we use DInvoke_rs to execute the syscall that corresponds to function NtQueryInformationProcess. Since the macro dinvoke::execute_syscall!() dynamically allocates and executes the shellcode required to execute the desired syscall, all hooks present in ntdll.dll are bypassed.
+In the next example, we use DInvoke_rs to execute the syscall that corresponds to function NtQueryInformationProcess. Since the macro dinvoke::execute_syscall!() dynamically allocates and executes the shellcode required to perform the desired syscall, all hooks present in ntdll.dll are bypassed.
 
 ```rust
 
