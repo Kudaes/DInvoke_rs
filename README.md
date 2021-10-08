@@ -21,6 +21,14 @@ All the credits go to the creators of the original C# implementation of this too
 
 I just created this port as a way to learn Rust myself and with the idea of facilitate to the Red Team community the transition from more common and known languages (like C++ or C#) to Rust to develop their hacking tools.  
 
+# Compiling requirements
+
+Since we are using [LITCRYPT](https://github.com/anvie/litcrypt.rs) plugin to obfuscate string literals, it is required to set up the environment variable LITCRYPT_ENCRYPT_KEY before compiling the code:
+
+	set LITCRYPT_ENCRYPT_KEY="yoursupersecretkey"
+
+If you dont set up this environment variable you will se a lot of errors at the time of opening the project or importing the code into your own crate. This feature will probably be removed in the near future since LLVM string obfuscation may be a better approach.
+
 # Example 1 - Resolving Exported Unmanaged APIs
 
 The example below demonstrates how to use DInvoke_rs to dynamically find and call exports of a DLL.
