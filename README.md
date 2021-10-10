@@ -21,7 +21,7 @@ All the credits go to the creators of the original C# implementation of this too
 
 I just created this port as a way to learn Rust myself and with the idea of facilitate to the Red Team community the transition from more common and known languages (like C++ or C#) to Rust to develop their hacking tools.  
 
-# Compiling requirements
+# Compile requirements
 
 Since we are using [LITCRYPT](https://github.com/anvie/litcrypt.rs) plugin to obfuscate string literals, it is required to set up the environment variable LITCRYPT_ENCRYPT_KEY before compiling the code:
 
@@ -102,7 +102,7 @@ fn main() {
 ```
 
 # Example 3 - Executing direct syscall
-In the next example, we use DInvoke_rs to execute the syscall that corresponds to function NtQueryInformationProcess. Since the macro dinvoke::execute_syscall!() dynamically allocates and executes the shellcode required to execute the desired syscall, all hooks present in ntdll.dll are bypassed.
+In the next example, we use DInvoke_rs to execute the syscall that corresponds to function NtQueryInformationProcess. Since the macro dinvoke::execute_syscall!() dynamically allocates and executes the shellcode required to perform the desired syscall, all hooks present in ntdll.dll are bypassed.
 
 ```rust
 
