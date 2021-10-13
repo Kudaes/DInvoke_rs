@@ -4,7 +4,7 @@ use_litcrypt!();
 
 use std::ptr;
 use std::ffi::CString;
-use data::{DLL_PROCESS_ATTACH, EAT, EntryPoint, LdrGetProcedureAddress, LoadLibraryA, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, PVOID, PeMetadata};
+use data::{CloseHandle, DLL_PROCESS_ATTACH, EAT, EntryPoint, LdrGetProcedureAddress, LoadLibraryA, MEM_COMMIT, MEM_RESERVE, OpenProcess, PAGE_EXECUTE_READ, PAGE_READWRITE, PVOID, PeMetadata};
 use libc::c_void;
 use litcrypt::lc;
 use winproc::Process;
@@ -305,8 +305,7 @@ pub fn prepare_syscall(id: u32) -> i64 {
         let buffer: *mut c_void = std::mem::transmute(sh.as_ptr());
         let bytes_written: *mut usize = std::mem::transmute(&usize::default());
         let ret = nt_write_virtual_memory(handle, *base_address, buffer, nsize, bytes_written);
-        println!("{}",*bytes_written);
-        println!("{:X}",ret as u32);
+
         if ret != 0
         {
             return 0;
@@ -465,7 +464,6 @@ pub fn ldr_get_procedure_address (module_handle: i64, function_name: &str, ordin
 
 /// Loads and retrieves a module's base address by dynamically calling LoadLibraryA.
 ///
-///
 /// It will return either the module's base address or an Err with a descriptive error message.
 ///
 /// # Examples
@@ -473,10 +471,10 @@ pub fn ldr_get_procedure_address (module_handle: i64, function_name: &str, ordin
 /// ```
 /// let ret = dinvoke::load_library_a("ntdll.dll");
 ///
-///  match ret {
-///      Ok(addr) => if addr != 0 {println!("ntdll.dll base address is 0x{:X}.", addr)},
-///      Err(e) => println!("{}",e),
-///  }
+/// match ret {
+///     Ok(addr) => if addr != 0 {println!("ntdll.dll base address is 0x{:X}.", addr)},
+///     Err(e) => println!("{}",e),
+/// }
 /// ```
 pub fn load_library_a(module: &str) -> Result<i64, String> {
 
@@ -510,6 +508,111 @@ pub fn load_library_a(module: &str) -> Result<i64, String> {
         Ok(result.0 as i64)
     }
 
+}
+
+/// Opens a HANDLE to a process.
+///
+/// It will return either a HANDLE object or an Err with a descriptive error message. If the function
+/// fails the HANDLE will have value -1 or 0.
+///
+/// # Examples
+///
+/// ```
+/// let pid = 792u32;
+/// let handle = dinvoke::open_process(0x0040, 0, pid).unwrap(); //PROCESS_DUP_HANDLE access right.
+/// 
+/// if handle.0 != 0 && handle.0 != -1
+/// {
+///     println!("Handle to process with id {} with PROCESS_DUP_HANDLE access right successfully obtained.", pid);
+/// }
+/// ```
+pub fn open_process(desired_access: u32, inherit_handle: i32, process_id: u32) -> Result<HANDLE, String> {
+
+    unsafe 
+    {    
+
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        let mut handle = HANDLE {0: 0 as isize};
+        if module_base_address != 0
+        {
+            let function_address = get_function_address(module_base_address, &lc!("OpenProcess"));
+
+            if function_address != 0 
+            {
+                let function_ptr: OpenProcess = std::mem::transmute(function_address); 
+  
+
+                handle = function_ptr(desired_access,inherit_handle,process_id);
+            }
+            else 
+            {
+                return Err(lc!("[x] Error obtaining OpenProcess address."));
+            }
+        } 
+        else 
+        {
+            return Err(lc!("[x] Error obtaining kernel32.dll base address."));
+        }
+
+        Ok(handle)
+    }
+
+}
+
+/// Closes a HANDLE object.
+///
+/// It will return either a boolean value or an Err with a descriptive error message. If the function
+/// fails the bool value returned will be false.
+///
+/// # Examples
+///
+/// ```
+/// let pid = 792u32;
+/// let handle = dinvoke::open_process(0x0040, 0, pid).unwrap(); //PROCESS_DUP_HANDLE access right.
+/// 
+/// if handle.0 != 0 && handle.0 != -1
+/// {
+///     let r = dinvoke::close_handle(handle).unwrap();
+///     if r
+///     {
+///         println!("Handle to process with id {} closed.", pid);
+///     }
+/// }
+/// ```
+pub fn close_handle(handle: HANDLE) -> Result<bool,String> {
+    unsafe 
+    {    
+
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        let ret;
+        if module_base_address != 0
+        {
+            let function_address = get_function_address(module_base_address, &lc!("CloseHandle"));
+
+            if function_address != 0 
+            {
+                let function_ptr: CloseHandle = std::mem::transmute(function_address); 
+  
+
+                ret = function_ptr(handle);
+            }
+            else 
+            {
+                return Err(lc!("[x] Error obtaining CloseHandle address."));
+            }
+        } 
+        else 
+        {
+            return Err(lc!("[x] Error obtaining kernel32.dll base address."));
+        }
+
+       if ret == 0
+       {
+           return Ok(false);
+       }
+
+       Ok(true)
+    }
 }
 
 /// Dynamically calls NtWriteVirtualMemory.
