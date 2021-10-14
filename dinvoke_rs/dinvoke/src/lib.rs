@@ -2,9 +2,11 @@
 extern crate litcrypt;
 use_litcrypt!();
 
-use std::ptr;
+use std::mem::size_of;
+use std::{collections::HashMap, ptr};
 use std::ffi::CString;
-use data::{CloseHandle, DLL_PROCESS_ATTACH, EAT, EntryPoint, LdrGetProcedureAddress, LoadLibraryA, MEM_COMMIT, MEM_RESERVE, OpenProcess, PAGE_EXECUTE_READ, PAGE_READWRITE, PVOID, PeMetadata};
+use bindings::Windows::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, CloseHandle, DLL_PROCESS_ATTACH, EAT, EntryPoint, LdrGetProcedureAddress, LoadLibraryA, MEM_COMMIT, MEM_RESERVE, OpenProcess, PAGE_EXECUTE_READ, PAGE_READWRITE, PVOID, PeMetadata};
 use libc::c_void;
 use litcrypt::lc;
 use winproc::Process;
@@ -108,6 +110,8 @@ pub fn get_function_address(module_base_address: i64, function: &str) -> i64 {
                 let function_rva = *(((module_base_address + functions_rva as i64 + (4 * (function_ordinal - ordinal_base)) as i64 )) as *mut i32);
                 function_ptr = (module_base_address + function_rva as i64) as *mut i32;
 
+                function_ptr = get_forward_address(function_ptr as *mut u8) as *mut i32;
+                
                 break;
             }
 
@@ -121,6 +125,195 @@ pub fn get_function_address(module_base_address: i64, function: &str) -> i64 {
         }
     
         ret
+
+    }
+}
+
+fn get_forward_address(function_ptr: *mut u8) -> i64 {
+   
+    unsafe 
+    {
+        let mut c = 100;
+        let mut ptr = function_ptr.clone();
+        let mut forwarded_names = "".to_string();
+
+        loop 
+        {
+            if *ptr as char != '\0'
+            {
+                forwarded_names.push(*ptr as char);
+            }
+            else 
+            {
+                break;    
+            }
+
+            ptr = ptr.add(1);
+            c = c - 1;
+
+            // Assume there wont be an exported address with len > 100
+            if c == 0
+            {
+                return function_ptr as i64;
+            }
+
+        }
+
+        let values: Vec<&str> = forwarded_names.split(".").collect();
+        if values.len() != 2
+        {
+            return function_ptr as i64;
+        }
+
+        let mut forwarded_module_name = values[0].to_string();
+        let forwarded_export_name = values[1].to_string();
+
+        let api_set = get_api_mapping();
+        let lookup_key = format!("{}{}",&forwarded_module_name[..forwarded_module_name.len() - 2], ".dll");
+
+        if api_set.contains_key(&lookup_key)
+        {
+            forwarded_module_name = match api_set.get(&lookup_key) {
+                Some(x) => x.to_string(),
+                None => {forwarded_module_name}
+            };
+        }
+        else 
+        {
+            forwarded_module_name = forwarded_module_name + ".dll";
+        }
+
+        let mut module = get_module_base_address(&forwarded_module_name);
+
+        // If the module is not already loaded, we try to load it dynamically calling LoadLibraryA
+        if module == 0
+        {
+            module = load_library_a(&forwarded_module_name).unwrap();
+        }
+
+        if module != 0
+        {
+            return get_function_address(module, &forwarded_export_name);
+        }
+
+        function_ptr as i64
+    }
+}
+pub fn get_api_mapping() -> HashMap<String,String> {
+
+    unsafe 
+    {
+        let handle = GetCurrentProcess();
+        let process_information: *mut c_void = std::mem::transmute(&PROCESS_BASIC_INFORMATION::default());
+        let _ret = nt_query_information_process(
+            handle, 
+            0, 
+            process_information,  
+            size_of::<PROCESS_BASIC_INFORMATION>() as u32, 
+            ptr::null_mut());
+    
+        let process_information_ptr: *mut PROCESS_BASIC_INFORMATION = std::mem::transmute(process_information);
+
+        let api_set_map_offset:u64;
+
+        if size_of::<usize>() == 4
+        {
+            api_set_map_offset = 0x38;
+        }
+        else 
+        {
+            api_set_map_offset = 0x68;
+        }
+
+        let mut api_set_dict: HashMap<String,String> = HashMap::new();
+
+        let api_set_namespace_ptr = *(((*process_information_ptr).PebBaseAddress as u64 + api_set_map_offset) as *mut isize);
+        let api_set_namespace_ptr: *mut ApiSetNamespace = std::mem::transmute(api_set_namespace_ptr);
+        let namespace = *api_set_namespace_ptr; 
+
+        for i in 0..namespace.count
+        {
+
+            let set_entry_ptr = (api_set_namespace_ptr as u64 + namespace.entry_offset as u64 + (i * size_of::<ApiSetNamespaceEntry>() as i32) as u64) as *mut ApiSetNamespaceEntry;
+            let set_entry = *set_entry_ptr;
+
+            let mut api_set_entry_name_ptr = (api_set_namespace_ptr as u64 + set_entry.name_offset as u64) as *mut u8;
+            let mut api_set_entry_name: String = "".to_string();
+            let mut j = 0;
+            while j < (set_entry.name_length / 2 )
+            {
+                let c = *api_set_entry_name_ptr as char;
+                if c != '\0' // Esto se podria meter en una funcion aparte
+                {
+                    api_set_entry_name.push(c);
+                    j = j + 1;
+                } 
+
+                api_set_entry_name_ptr = api_set_entry_name_ptr.add(1); 
+
+            }
+
+            let api_set_entry_key = format!("{}{}",&api_set_entry_name[..api_set_entry_name.len()-2], ".dll");
+            let mut set_value_ptr: *mut ApiSetValueEntry = ptr::null_mut();
+
+            if set_entry.value_length == 1
+            {
+                let value = (api_set_namespace_ptr as u64 + set_entry.value_offset as u64) as *mut u8;
+                set_value_ptr = std::mem::transmute(value);
+            }
+            else if set_entry.value_length > 1
+            {
+                for x in 0..set_entry.value_length 
+                {
+                    let host_ptr = (api_set_entry_name_ptr as u64 + set_entry.value_offset as u64 + size_of::<ApiSetValueEntry>() as u64 * x as u64) as *mut u8;
+                    let mut c: u8 = u8::default();
+                    let mut host: String = "".to_string();
+                    while c as char != '\0'
+                    {
+                        c = *host_ptr;
+                        if c as char != '\0'
+                        {
+                            host.push(c as char);
+                        }
+                    }
+
+                    if host != api_set_entry_name
+                    {
+                        set_value_ptr = (api_set_namespace_ptr as u64 + set_entry.value_offset as u64 + size_of::<ApiSetValueEntry>() as u64 * x as u64) as *mut ApiSetValueEntry;
+                    }
+                }
+
+                if set_value_ptr == ptr::null_mut()
+                {
+                    set_value_ptr = (api_set_namespace_ptr as u64 + set_entry.value_offset as u64) as *mut ApiSetValueEntry;
+                }
+            }
+
+            let set_value = *set_value_ptr;
+            let mut api_set_value: String = "".to_string();
+            if set_value.value_count != 0
+            {
+                let mut value_ptr = (api_set_namespace_ptr as u64 + set_value.value_offset as u64) as *mut u8;
+                let mut r = 0;
+                while r < (set_value.value_count / 2 )
+                {
+                    let c = *value_ptr as char;
+                    if c != '\0' 
+                    {
+                        api_set_value.push(c);
+                        r = r + 1;
+                    } 
+    
+                    value_ptr = value_ptr.add(1); 
+    
+                }
+            }
+
+            api_set_dict.insert(api_set_entry_key, api_set_value);
+
+        }
+
+        api_set_dict
 
     }
 }

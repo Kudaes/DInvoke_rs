@@ -4,10 +4,10 @@ use_litcrypt!();
 
 
 use std::collections::HashMap;
-use std::{fs, ptr};
+use std::fs;
 use std::mem::size_of;
 use std::ffi::c_void;
-use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, 
+use data::{IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, 
     PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PVOID, PeMetadata, SECTION_MEM_EXECUTE, SECTION_MEM_READ, 
     SECTION_MEM_WRITE};
 use litcrypt::lc;
@@ -15,7 +15,7 @@ use litcrypt::lc;
 
 use bindings::{
     Windows::Win32::System::Diagnostics::Debug::{IMAGE_OPTIONAL_HEADER32,IMAGE_SECTION_HEADER},
-    Windows::Win32::System::Threading::{GetCurrentProcess,PROCESS_BASIC_INFORMATION},
+    Windows::Win32::System::Threading::GetCurrentProcess,
     Windows::Win32::System::SystemServices::{IMAGE_BASE_RELOCATION,IMAGE_IMPORT_DESCRIPTOR,IMAGE_THUNK_DATA32,IMAGE_THUNK_DATA64},
 };
 
@@ -321,7 +321,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
         let mut api_set_dict: HashMap<String,String> = HashMap::new();
         if version >= "10".to_string()
         {
-            api_set_dict = get_api_mapping();
+            api_set_dict = dinvoke::get_api_mapping();
         }
 
         let mut counter = 0;
@@ -483,125 +483,6 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
         }
 
         Ok(())
-    }
-}
-
-fn get_api_mapping() -> HashMap<String,String> {
-
-    unsafe 
-    {
-        let handle = GetCurrentProcess();
-        let process_information: *mut c_void = std::mem::transmute(&PROCESS_BASIC_INFORMATION::default());
-        let _ret = dinvoke::nt_query_information_process(
-            handle, 
-            0, 
-            process_information,  
-            size_of::<PROCESS_BASIC_INFORMATION>() as u32, 
-            ptr::null_mut());
-    
-        let process_information_ptr: *mut PROCESS_BASIC_INFORMATION = std::mem::transmute(process_information);
-
-        let api_set_map_offset:u64;
-
-        if size_of::<usize>() == 4
-        {
-            api_set_map_offset = 0x38;
-        }
-        else 
-        {
-            api_set_map_offset = 0x68;
-        }
-
-        let mut api_set_dict: HashMap<String,String> = HashMap::new();
-
-        let api_set_namespace_ptr = *(((*process_information_ptr).PebBaseAddress as u64 + api_set_map_offset) as *mut isize);
-        let api_set_namespace_ptr: *mut ApiSetNamespace = std::mem::transmute(api_set_namespace_ptr);
-        let namespace = *api_set_namespace_ptr; 
-
-        for i in 0..namespace.count
-        {
-
-            let set_entry_ptr = (api_set_namespace_ptr as u64 + namespace.entry_offset as u64 + (i * size_of::<ApiSetNamespaceEntry>() as i32) as u64) as *mut ApiSetNamespaceEntry;
-            let set_entry = *set_entry_ptr;
-
-            let mut api_set_entry_name_ptr = (api_set_namespace_ptr as u64 + set_entry.name_offset as u64) as *mut u8;
-            let mut api_set_entry_name: String = "".to_string();
-            let mut j = 0;
-            while j < (set_entry.name_length / 2 )
-            {
-                let c = *api_set_entry_name_ptr as char;
-                if c != '\0' // Esto se podria meter en una funcion aparte
-                {
-                    api_set_entry_name.push(c);
-                    j = j + 1;
-                } 
-
-                api_set_entry_name_ptr = api_set_entry_name_ptr.add(1); 
-
-            }
-
-            let api_set_entry_key = format!("{}{}",&api_set_entry_name[..api_set_entry_name.len()-2], ".dll");
-            let mut set_value_ptr: *mut ApiSetValueEntry = ptr::null_mut();
-
-            if set_entry.value_length == 1
-            {
-                let value = (api_set_namespace_ptr as u64 + set_entry.value_offset as u64) as *mut u8;
-                set_value_ptr = std::mem::transmute(value);
-            }
-            else if set_entry.value_length > 1
-            {
-                for x in 0..set_entry.value_length 
-                {
-                    let host_ptr = (api_set_entry_name_ptr as u64 + set_entry.value_offset as u64 + size_of::<ApiSetValueEntry>() as u64 * x as u64) as *mut u8;
-                    let mut c: u8 = u8::default();
-                    let mut host: String = "".to_string();
-                    while c as char != '\0'
-                    {
-                        c = *host_ptr;
-                        if c as char != '\0'
-                        {
-                            host.push(c as char);
-                        }
-                    }
-
-                    if host != api_set_entry_name
-                    {
-                        set_value_ptr = (api_set_namespace_ptr as u64 + set_entry.value_offset as u64 + size_of::<ApiSetValueEntry>() as u64 * x as u64) as *mut ApiSetValueEntry;
-                    }
-                }
-
-                if set_value_ptr == ptr::null_mut()
-                {
-                    set_value_ptr = (api_set_namespace_ptr as u64 + set_entry.value_offset as u64) as *mut ApiSetValueEntry;
-                }
-            }
-
-            let set_value = *set_value_ptr;
-            let mut api_set_value: String = "".to_string();
-            if set_value.value_count != 0
-            {
-                let mut value_ptr = (api_set_namespace_ptr as u64 + set_value.value_offset as u64) as *mut u8;
-                let mut r = 0;
-                while r < (set_value.value_count / 2 )
-                {
-                    let c = *value_ptr as char;
-                    if c != '\0' 
-                    {
-                        api_set_value.push(c);
-                        r = r + 1;
-                    } 
-    
-                    value_ptr = value_ptr.add(1); 
-    
-                }
-            }
-
-            api_set_dict.insert(api_set_entry_key, api_set_value);
-
-        }
-
-        api_set_dict
-
     }
 }
 
