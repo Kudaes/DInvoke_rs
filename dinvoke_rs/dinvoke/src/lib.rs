@@ -211,7 +211,9 @@ pub fn get_api_mapping() -> HashMap<String,String> {
             process_information,  
             size_of::<PROCESS_BASIC_INFORMATION>() as u32, 
             ptr::null_mut());
-    
+        
+        let _r = close_handle(handle);
+
         let process_information_ptr: *mut PROCESS_BASIC_INFORMATION = std::mem::transmute(process_information);
 
         let api_set_map_offset:u64;
@@ -506,6 +508,8 @@ pub fn prepare_syscall(id: u32) -> i64 {
 
         let ret = nt_protect_virtual_memory(handle, base_address, size, PAGE_EXECUTE_READ, old_protection);
 
+        let _r = close_handle(handle);
+        
         if ret != 0
         {
             return 0;
@@ -675,7 +679,7 @@ pub fn load_library_a(module: &str) -> Result<i64, String> {
     {    
 
         let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
-        let mut result = HINSTANCE {0: 0 as isize};
+        let result: HINSTANCE;
         if module_base_address != 0
         {
             let function_address = get_function_address(module_base_address, &lc!("LoadLibraryA"));
@@ -725,7 +729,7 @@ pub fn open_process(desired_access: u32, inherit_handle: i32, process_id: u32) -
     {    
 
         let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
-        let mut handle = HANDLE {0: 0 as isize};
+        let handle: HANDLE;
         if module_base_address != 0
         {
             let function_address = get_function_address(module_base_address, &lc!("OpenProcess"));

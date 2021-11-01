@@ -83,6 +83,8 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,i64), Str
         let size: *mut usize = std::mem::transmute(&dwsize);
         let ret = dinvoke::nt_allocate_virtual_memory(handle, base_address, zero_bits, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         
+        let _r = dinvoke::close_handle(handle);
+
         if ret != 0
         {
             return Err(lc!("[x] Error allocating memory."));
@@ -198,6 +200,7 @@ fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_info: 
 
         if ret != 0
         {
+            let _r = dinvoke::close_handle(handle);
             return Err(lc!("[x] Error writing PE headers to the allocated memory."));
         }
 
@@ -211,6 +214,7 @@ fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_info: 
             let nsize = section.SizeOfRawData as usize;
             let bytes_written: *mut usize = std::mem::transmute(&written);
             let ret = dinvoke::nt_write_virtual_memory(handle, base_address, buffer, nsize, bytes_written);
+            let _r = dinvoke::close_handle(handle);
 
             if ret != 0 || *bytes_written != nsize
             {
@@ -549,6 +553,8 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
             *size = section.Misc.VirtualSize as usize;
             let old_protection: *mut u32 = std::mem::transmute(&u32::default());
             let ret = dinvoke::nt_protect_virtual_memory(handle, base_address, size, new_protect, old_protection);
+            
+            let _r = dinvoke::close_handle(handle);
 
             if ret != 0
             {
