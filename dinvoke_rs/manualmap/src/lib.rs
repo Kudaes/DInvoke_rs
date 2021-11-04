@@ -372,7 +372,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
 
                 if module_handle == 0
                 {
-                    module_handle = dinvoke::load_library_a(&dll_name).unwrap() as u64;
+                    module_handle = dinvoke::load_library_a(&dll_name) as u64;
 
                     if module_handle == 0
                     {

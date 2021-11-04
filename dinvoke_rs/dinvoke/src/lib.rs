@@ -6,7 +6,7 @@ use std::mem::size_of;
 use std::{collections::HashMap, ptr};
 use std::ffi::CString;
 use bindings::Windows::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
-use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, CloseHandle, DLL_PROCESS_ATTACH, EAT, EntryPoint, LdrGetProcedureAddress, LoadLibraryA, MEM_COMMIT, MEM_RESERVE, OpenProcess, PAGE_EXECUTE_READ, PAGE_READWRITE, PVOID, PeMetadata};
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, DLL_PROCESS_ATTACH, EAT, EntryPoint, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, PVOID, PeMetadata};
 use libc::c_void;
 use litcrypt::lc;
 use winproc::Process;
@@ -188,7 +188,7 @@ fn get_forward_address(function_ptr: *mut u8) -> i64 {
         // If the module is not already loaded, we try to load it dynamically calling LoadLibraryA
         if module == 0
         {
-            module = load_library_a(&forwarded_module_name).unwrap();
+            module = load_library_a(&forwarded_module_name);
         }
 
         if module != 0
@@ -571,7 +571,7 @@ pub fn call_module_entry_point(pe_info: &PeMetadata, module_base_address: i64) -
 /// if ntdll != 0
 /// {
 ///     let ordinal: u32 = 8; 
-///     let addr = dinvoke::get_function_address_ordinal(ntdll, 8);    
+///     let addr = dinvoke::get_function_address_ordinal(ntdll, ordinal);    
 ///     println!("The function with ordinal 8 is located at 0x{:X}.", addr);
 /// }
 /// ```
@@ -579,11 +579,7 @@ pub fn get_function_address_by_ordinal(module_base_address: i64, ordinal: u32) -
 
     let ret = ldr_get_procedure_address(module_base_address, "", ordinal);
 
-    match ret {
-    Ok(r) => return r,
-    Err(_) => return 0, 
-    }
-    
+    ret    
 }
 
 /// Retrieves the address of an exported function from the specified module either by its name 
@@ -602,60 +598,48 @@ pub fn get_function_address_by_ordinal(module_base_address: i64, ordinal: u32) -
 /// if ntdll != 0
 /// {
 ///     let ordinal: u32 = 8; // Ordinal 8 represents the function RtlDispatchAPC
-///     let ret = dinvoke::ldr_get_procedure_address(ntdll,"", 8);
-///     match ret {
-///         Ok(addr) => println!("The address where RtlDispatchAPC is located at is 0x{:X}.", addr),
-///         Err(e) => println!("{}",e),
-///     }
-///     
+///     let addr = dinvoke::ldr_get_procedure_address(ntdll,"", 8);
+///     println!("The function with ordinal 8 is located at 0x{:X}.", addr);
 /// }
 /// ```
-pub fn ldr_get_procedure_address (module_handle: i64, function_name: &str, ordinal: u32) -> Result<i64, String> {
+pub fn ldr_get_procedure_address (module_handle: i64, function_name: &str, ordinal: u32) -> i64 {
 
     unsafe 
     {   
-        let mut result: i64 = 0;
-        
-        let module_base_address = get_module_base_address(&lc!("ntdll.dll")); 
-        if module_base_address != 0
+
+        let ret: Option<i32>;
+        let func_ptr: data::LdrGetProcedureAddress;
+        let hmodule: PVOID = std::mem::transmute(module_handle);
+        let return_address: *mut c_void = std::mem::transmute(&u64::default());
+        let return_address: *mut PVOID = std::mem::transmute(return_address);
+        let mut fun_name: *mut String = std::mem::transmute(&String::default());
+
+        if function_name == ""
         {
-            let function_address = get_function_address(module_base_address, &lc!("LdrGetProcedureAddress"));
-
-            if function_address != 0 
-            {
-                let hmodule: PVOID = std::mem::transmute(module_handle);
-                let func_ptr: LdrGetProcedureAddress = std::mem::transmute(function_address);  
-                let return_address: *mut c_void = std::mem::transmute(&u64::default());
-                let return_address: *mut PVOID = std::mem::transmute(return_address);
-                let mut fun_name: *mut String = std::mem::transmute(&String::default());
-
-                if function_name == ""
-                {
-                    fun_name = ptr::null_mut();
-                }
-                else 
-                {
-                    *fun_name = function_name.to_string();
-                }
-
-                let ret = func_ptr(hmodule, fun_name, ordinal, return_address);
-
-                if ret == 0
-                {
-                    result = *return_address as i64;
-                }
-            }
-            else 
-            {
-                return Err(lc!("[x] Error obtaining LdrGetProcedureAddress address."));
-            }
+            fun_name = ptr::null_mut();
         }
         else 
         {
-            return Err(lc!("[x] Error obtaining ntdll.dll base address."));
+            *fun_name = function_name.to_string();
         }
 
-        Ok(result)
+        let module_base_address = get_module_base_address(&lc!("ntdll.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("LdrGetProcedureAddress"),func_ptr,ret,hmodule,fun_name,ordinal,return_address);
+
+        match ret {
+            Some(x) => 
+            {
+                if x == 0
+                {
+                    return *return_address as i64;
+                } 
+                else 
+                {
+                    return 0;
+                }
+            },
+            None => return 0,
+        }
     }
 }
 
@@ -668,41 +652,24 @@ pub fn ldr_get_procedure_address (module_handle: i64, function_name: &str, ordin
 /// ```
 /// let ret = dinvoke::load_library_a("ntdll.dll");
 ///
-/// match ret {
-///     Ok(addr) => if addr != 0 {println!("ntdll.dll base address is 0x{:X}.", addr)},
-///     Err(e) => println!("{}",e),
-/// }
+/// if ret != 0 {println!("ntdll.dll base address is 0x{:X}.", addr);
 /// ```
-pub fn load_library_a(module: &str) -> Result<i64, String> {
+pub fn load_library_a(module: &str) -> i64 {
 
     unsafe 
-    {    
-
+    {     
+        let ret: Option<HINSTANCE>;
+        let func_ptr: data::LoadLibraryA;
+        let name = CString::new(module.to_string()).expect("CString::new failed");
+        let function_name = PSTR{0: name.as_ptr() as *mut u8};
         let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
-        let result: HINSTANCE;
-        if module_base_address != 0
-        {
-            let function_address = get_function_address(module_base_address, &lc!("LoadLibraryA"));
+        dynamic_invoke!(module_base_address,&lc!("LoadLibraryA"),func_ptr,ret,function_name);
 
-            if function_address != 0 
-            {
-                let function_ptr: LoadLibraryA = std::mem::transmute(function_address); 
-                let name = CString::new(module.to_string()).expect("CString::new failed");
-                let function_name = PSTR{0: name.as_ptr() as *mut u8};
-
-                result = function_ptr(function_name);
-            }
-            else 
-            {
-                return Err(lc!("[x] Error obtaining LoadLibraryA address."));
-            }
-        } 
-        else 
-        {
-            return Err(lc!("[x] Error obtaining kernel32.dll base address."));
+        match ret {
+            Some(x) => return x.0 as i64,
+            None => return 0,
         }
 
-        Ok(result.0 as i64)
     }
 
 }
@@ -716,42 +683,27 @@ pub fn load_library_a(module: &str) -> Result<i64, String> {
 ///
 /// ```
 /// let pid = 792u32;
-/// let handle = dinvoke::open_process(0x0040, 0, pid).unwrap(); //PROCESS_DUP_HANDLE access right.
+/// let handle = dinvoke::open_process(0x0040, 0, pid); //PROCESS_DUP_HANDLE access right.
 /// 
 /// if handle.0 != 0 && handle.0 != -1
 /// {
 ///     println!("Handle to process with id {} with PROCESS_DUP_HANDLE access right successfully obtained.", pid);
 /// }
 /// ```
-pub fn open_process(desired_access: u32, inherit_handle: i32, process_id: u32) -> Result<HANDLE, String> {
+pub fn open_process(desired_access: u32, inherit_handle: i32, process_id: u32) -> HANDLE {
 
     unsafe 
     {    
 
+        let ret: Option<HANDLE>;
+        let func_ptr: data::OpenProcess;
         let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
-        let handle: HANDLE;
-        if module_base_address != 0
-        {
-            let function_address = get_function_address(module_base_address, &lc!("OpenProcess"));
+        dynamic_invoke!(module_base_address,&lc!("OpenProcess"),func_ptr,ret,desired_access,inherit_handle,process_id);
 
-            if function_address != 0 
-            {
-                let function_ptr: OpenProcess = std::mem::transmute(function_address); 
-  
-
-                handle = function_ptr(desired_access,inherit_handle,process_id);
-            }
-            else 
-            {
-                return Err(lc!("[x] Error obtaining OpenProcess address."));
-            }
-        } 
-        else 
-        {
-            return Err(lc!("[x] Error obtaining kernel32.dll base address."));
+        match ret {
+            Some(x) => return x,
+            None => return HANDLE::default(),
         }
-
-        Ok(handle)
     }
 
 }
@@ -765,50 +717,39 @@ pub fn open_process(desired_access: u32, inherit_handle: i32, process_id: u32) -
 ///
 /// ```
 /// let pid = 792u32;
-/// let handle = dinvoke::open_process(0x0040, 0, pid).unwrap(); //PROCESS_DUP_HANDLE access right.
+/// let handle = dinvoke::open_process(0x0040, 0, pid); //PROCESS_DUP_HANDLE access right.
 /// 
 /// if handle.0 != 0 && handle.0 != -1
 /// {
-///     let r = dinvoke::close_handle(handle).unwrap();
+///     let r = dinvoke::close_handle(handle);
 ///     if r
 ///     {
 ///         println!("Handle to process with id {} closed.", pid);
 ///     }
 /// }
 /// ```
-pub fn close_handle(handle: HANDLE) -> Result<bool,String> {
+pub fn close_handle(handle: HANDLE) -> bool {
     unsafe 
-    {    
+    {
+        let ret: Option<i32>;
+        let func_ptr: data::CloseHandle;
+        let ntdll = get_module_base_address(&lc!("kernel32.dll"));
+        dynamic_invoke!(ntdll,&lc!("CloseHandle"),func_ptr,ret,handle);
 
-        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
-        let ret;
-        if module_base_address != 0
-        {
-            let function_address = get_function_address(module_base_address, &lc!("CloseHandle"));
-
-            if function_address != 0 
+        match ret {
+            Some(x) =>
             {
-                let function_ptr: CloseHandle = std::mem::transmute(function_address); 
-  
-
-                ret = function_ptr(handle);
-            }
-            else 
-            {
-                return Err(lc!("[x] Error obtaining CloseHandle address."));
-            }
-        } 
-        else 
-        {
-            return Err(lc!("[x] Error obtaining kernel32.dll base address."));
+                if x == 0
+                {
+                    return false;
+                }
+                else 
+                {
+                    return true;
+                }
+            },
+            None => return false,
         }
-
-       if ret == 0
-       {
-           return Ok(false);
-       }
-
-       Ok(true)
     }
 }
 
@@ -821,8 +762,8 @@ pub fn nt_write_virtual_memory (handle: HANDLE, base_address: PVOID, buffer: PVO
     {
         let ret;
         let func_ptr: data::NtWriteVirtualMemory;
-        let ntdll = get_module_base_address("ntdll.dll");
-        dynamic_invoke!(ntdll,"NtWriteVirtualMemory",func_ptr,ret,handle,base_address,buffer,size,bytes_written);
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtWriteVirtualMemory"),func_ptr,ret,handle,base_address,buffer,size,bytes_written);
 
         match ret {
             Some(x) => return x,
@@ -841,8 +782,8 @@ pub fn nt_allocate_virtual_memory (handle: HANDLE, base_address: *mut PVOID, zer
     {
         let ret;
         let func_ptr: data::NtAllocateVirtualMemory;
-        let ntdll = get_module_base_address("ntdll.dll");
-        dynamic_invoke!(ntdll,"NtAllocateVirtualMemory",func_ptr,ret,handle,base_address,zero_bits,size,allocation_type,protection);
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtAllocateVirtualMemory"),func_ptr,ret,handle,base_address,zero_bits,size,allocation_type,protection);
 
         match ret {
             Some(x) => return x,
@@ -860,8 +801,8 @@ pub fn nt_protect_virtual_memory (handle: HANDLE, base_address: *mut PVOID, size
     {
         let ret;
         let func_ptr: data::NtProtectVirtualMemory;
-        let ntdll = get_module_base_address("ntdll.dll");
-        dynamic_invoke!(ntdll,"NtProtectVirtualMemory",func_ptr,ret,handle,base_address,size,new_protection,old_protection);
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtProtectVirtualMemory"),func_ptr,ret,handle,base_address,size,new_protection,old_protection);
 
         match ret {
             Some(x) => return x,
@@ -879,8 +820,8 @@ pub fn nt_query_information_process (handle: HANDLE, process_information_class: 
     {
         let ret;
         let func_ptr: data::NtQueryInformationProcess;
-        let ntdll = get_module_base_address("ntdll.dll");
-        dynamic_invoke!(ntdll,"NtQueryInformationProcess",func_ptr,ret,handle,process_information_class,process_information,length,return_length);
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtQueryInformationProcess"),func_ptr,ret,handle,process_information_class,process_information,length,return_length);
 
         match ret {
             Some(x) => return x,
@@ -898,8 +839,8 @@ pub fn rtl_adjust_privilege(privilege: u32, enable: u8, current_thread: u8, enab
     {
         let ret;
         let func_ptr: data::RtlAdjustPrivilege;
-        let ntdll = get_module_base_address("ntdll.dll");
-        dynamic_invoke!(ntdll,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled);
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("RtlAdjustPrivilege"),func_ptr,ret,privilege,enable,current_thread,enabled);
 
         match ret {
             Some(x) => return x,
