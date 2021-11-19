@@ -3,6 +3,10 @@ name = "dinvoke_rs"
 version = "0.1.0"
 edition = "2018"
 
+[profile.dev.package.dinvoke_rs]
+opt-level = 3
+debug = 0
+
 [dependencies]
 dinvoke = { path = "dinvoke" }
 manualmap = { path = "manualmap" }
