@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, ffi::c_void};
 
-use bindings::Windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, PSTR}, Security::SECURITY_ATTRIBUTES, System::{Diagnostics::Debug::{IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, MINIDUMP_CALLBACK_INFORMATION, MINIDUMP_EXCEPTION_INFORMATION, MINIDUMP_USER_STREAM_INFORMATION}, SystemServices::OVERLAPPED}};
+use bindings::Windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, PSTR}, Security::SECURITY_ATTRIBUTES, System::{Diagnostics::Debug::{IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, MINIDUMP_CALLBACK_INFORMATION, MINIDUMP_EXCEPTION_INFORMATION, MINIDUMP_USER_STREAM_INFORMATION}, SystemServices::OVERLAPPED, WindowsProgramming::OBJECT_ATTRIBUTES}};
 
 pub type PVOID = *mut c_void;
 pub type DWORD = u32;
@@ -19,25 +19,30 @@ pub type CreateFileTransactedA = unsafe extern "system" fn (*mut u8, u32, u32, *
 pub type GetLastError = unsafe extern "system" fn () -> u32;
 pub type CloseHandle = unsafe extern "system" fn (HANDLE) -> i32;
 pub type LdrGetProcedureAddress = unsafe extern "system" fn (PVOID, *mut String, u32, *mut PVOID) -> i32;
+pub type NtOpenProcess = unsafe extern "system" fn (*mut HANDLE, u32, *mut OBJECT_ATTRIBUTES, *mut CLIENT_ID) -> i32;
 pub type NtWriteVirtualMemory = unsafe extern "system" fn (HANDLE, PVOID, PVOID, usize, *mut usize) -> i32;
 pub type NtProtectVirtualMemory = unsafe extern "system" fn (HANDLE, *mut PVOID, *mut usize, u32, *mut u32) -> i32;
 pub type NtAllocateVirtualMemory = unsafe extern "system" fn (HANDLE, *mut PVOID, usize, *mut usize, u32, u32) -> i32;
+pub type NtCreateThreadEx = unsafe extern "system" fn (*mut HANDLE, u32, usize, HANDLE, PVOID, usize, usize, usize, usize, usize, usize) -> i32;
+pub type NtResumeThread = unsafe extern "system" fn (HANDLE, *mut u32) -> i32;
 pub type NtQueryInformationProcess = unsafe extern "system" fn (HANDLE, u32, PVOID, u32, *mut u32) -> i32;
 pub type NtQuerySystemInformation = unsafe extern "system" fn (u32, PVOID, u32, *mut u32) -> i32;
 pub type NtDuplicateObject = unsafe extern "system" fn (HANDLE, HANDLE, HANDLE, *mut HANDLE, u32, u32, u32) -> i32;
 pub type NtQueryObject = unsafe extern "system" fn (HANDLE, u32, PVOID, u32, *mut u32) -> i32;
 pub type RtlAdjustPrivilege = unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32;
- 
+
 pub const DLL_PROCESS_DETACH: u32 = 0;
 pub const DLL_PROCESS_ATTACH: u32 = 1;
 pub const DLL_THREAD_ATTACH: u32 = 2;
 pub const DLL_THREAD_DETACH: u32 = 3;
 
+pub const PAGE_NOACCESS: u32 = 0x1;
 pub const PAGE_READONLY: u32 = 0x2;
 pub const PAGE_READWRITE: u32 = 0x4;
 pub const PAGE_EXECUTE_READWRITE: u32 = 0x40;
 pub const PAGE_EXECUTE_READ: u32 = 0x20;
 pub const PAGE_EXECUTE: u32 = 0x10;
+pub const MAXIMUM_ALLOWED: u32 = 0x02000000;
 
 pub const MEM_COMMIT: u32 = 0x1000;
 pub const MEM_RESERVE: u32 = 0x2000;
@@ -50,7 +55,6 @@ pub const GENERIC_READ: u32 = 0x80000000;
 pub const GENERIC_WRITE: u32 = 0x40000000;
 pub const GENERIC_EXECUTE: u32 = 0x20000000;
 pub const GENERIC_ALL: u32 = 0x10000000;
-
 
 
 #[derive(Clone)]
@@ -178,4 +182,10 @@ pub struct SYSTEM_HANDLE_TABLE_ENTRY_INFO {
     pub handle_value: u16,
     pub object: PVOID,
     pub granted_access: u32,
+}
+
+#[repr(C)]
+pub struct CLIENT_ID {
+    pub unique_process: HANDLE,
+    pub unique_thread: HANDLE,
 }
