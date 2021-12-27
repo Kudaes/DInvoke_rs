@@ -5,13 +5,16 @@ use_litcrypt!();
 use std::mem::size_of;
 use std::{collections::HashMap, ptr};
 use std::ffi::CString;
+use bindings::Windows::Win32::System::Kernel::UNICODE_STRING;
 use bindings::Windows::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
+use bindings::Windows::Win32::System::WindowsProgramming::{OBJECT_ATTRIBUTES, IO_STATUS_BLOCK};
+use bindings::Windows::Win32::{Foundation::{HANDLE, HINSTANCE, PSTR}, {System::Threading::{GetCurrentProcess}}};
 use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, DLL_PROCESS_ATTACH, EAT, EntryPoint, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, PVOID, PeMetadata};
 use libc::c_void;
 use litcrypt::lc;
 use winproc::Process;
+use winapi::shared::ntdef::LARGE_INTEGER;
 
-use bindings::Windows::Win32::{Foundation::{HANDLE, HINSTANCE, PSTR}, {System::Threading::{GetCurrentProcess}}};
 
 
 /// Retrieves the base address of a module loaded in the current process.
@@ -847,6 +850,81 @@ pub fn rtl_adjust_privilege(privilege: u32, enable: u8, current_thread: u8, enab
             None => return -1,
         }
     } 
+}
+
+pub fn rtl_init_unicode_string (destination_string: *mut UNICODE_STRING, source_string: *const u16) -> () 
+{
+    unsafe
+    {
+        let _ret: Option<()>;
+        let func_ptr: data::RtlInitUnicodeString;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("RtlInitUnicodeString"),func_ptr,_ret,destination_string, source_string);
+    }
+}
+
+pub fn rtl_zero_memory (address: PVOID, length: usize) -> () 
+{
+    unsafe
+    {
+        let _ret: Option<()>;
+        let func_ptr: data::RtlZeroMemory;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("RtlZeroMemory"),func_ptr,_ret,address,length);
+    }
+}
+
+pub fn nt_open_file (file_handle: *mut HANDLE, desired_access: u32, object_attributes: *mut OBJECT_ATTRIBUTES, 
+                     io: *mut IO_STATUS_BLOCK, share_access: u32, options: u32) -> i32
+{
+    unsafe 
+    {
+        let ret: Option<i32>;
+        let func_ptr: data::NtOpenFile;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtOpenFile"),func_ptr,ret,file_handle,desired_access,object_attributes,io,share_access,options);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    } 
+}
+
+pub fn nt_create_section (section_handle: *mut HANDLE, desired_access: u32, object_attributes: *mut OBJECT_ATTRIBUTES, 
+                          size: *mut LARGE_INTEGER, page_protection: u32, allocation_attributes: u32, file_handle: HANDLE) -> i32
+{
+    unsafe 
+    {
+        let ret: Option<i32>;
+        let func_ptr: data::NtCreateSection;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtCreateSection"),func_ptr,ret,section_handle,desired_access,
+                        object_attributes,size,page_protection,allocation_attributes,file_handle);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    }
+}
+
+pub fn nt_map_view_of_section (section_handle: HANDLE, process_handle: HANDLE, base_address: *mut PVOID, zero: usize, commit_size: usize, 
+                               offset: *mut LARGE_INTEGER, view_size: *mut usize, disposition: u32, allocation_type: u32, protection: u32) -> i32
+{
+    unsafe 
+    {
+        let ret: Option<i32>;
+        let func_ptr: data::NtMapViewOfSection;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtMapViewOfSection"),func_ptr,ret,section_handle,process_handle,base_address,zero,commit_size,
+                        offset,view_size,disposition,allocation_type,protection);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    }
 }
 
 /// Dynamically calls an exported function from the specified module.

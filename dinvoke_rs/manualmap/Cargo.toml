@@ -5,7 +5,7 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [profile.dev.package.manualmap]
-opt-level = 3
+opt-level = 0
 debug = 0
 
 [dependencies]
@@ -14,3 +14,4 @@ dinvoke = { path = "../dinvoke" }
 data = { path = "../data" }
 litcrypt = "0.3"
 os_info = { version = "3.0", default-features = false }
+winapi = "*"

@@ -3,13 +3,15 @@ extern crate litcrypt;
 use_litcrypt!();
 
 
-use std::collections::HashMap;
-use std::fs;
+use std::{collections::HashMap, path::Path};
+use std::{fs, ptr};
 use std::mem::size_of;
 use std::ffi::c_void;
+use bindings::Windows::Win32::Foundation::HANDLE;
+use bindings::Windows::Win32::System::WindowsProgramming::{OBJECT_ATTRIBUTES, IO_STATUS_BLOCK};
 use data::{IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, 
     PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PVOID, PeMetadata, SECTION_MEM_EXECUTE, SECTION_MEM_READ, 
-    SECTION_MEM_WRITE};
+    SECTION_MEM_WRITE, FILE_EXECUTE, FILE_READ_ATTRIBUTES, SYNCHRONIZE, FILE_READ_DATA, FILE_SHARE_READ, FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_NON_DIRECTORY_FILE, SECTION_ALL_ACCESS, SEC_IMAGE, PeManualMap};
 use litcrypt::lc;
 
 
@@ -17,7 +19,9 @@ use bindings::{
     Windows::Win32::System::Diagnostics::Debug::{IMAGE_OPTIONAL_HEADER32,IMAGE_SECTION_HEADER},
     Windows::Win32::System::Threading::GetCurrentProcess,
     Windows::Win32::System::SystemServices::{IMAGE_BASE_RELOCATION,IMAGE_IMPORT_DESCRIPTOR,IMAGE_THUNK_DATA32,IMAGE_THUNK_DATA64},
+    Windows::Win32::System::Kernel::UNICODE_STRING,
 };
+use winapi::shared::ntdef::LARGE_INTEGER;
 
 /// Manually maps a PE from disk to the memory of the current process.
 ///
@@ -171,7 +175,7 @@ pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String> {
     }
 }
 
-fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_info: &PeMetadata) -> Result<(),String>{
+pub fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_info: &PeMetadata) -> Result<(),String>{
 
     if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) 
     {
@@ -565,4 +569,96 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
 
         Ok(())
     } 
+}
+
+pub fn map_to_section(module_path: &str) -> Result<PeManualMap,String>
+{
+    unsafe
+    {
+        if !Path::new(&module_path).is_file()
+        {
+            return Err(lc!("[x] Filepath not found."));
+        }
+
+        let module_path = format!("{}{}", "\\??\\", module_path);
+        let mut module_path_utf16: Vec<u16> = module_path.encode_utf16().collect();
+        module_path_utf16.push(0);
+
+        let object_name: *mut UNICODE_STRING = std::mem::transmute(&UNICODE_STRING::default());
+        dinvoke::rtl_init_unicode_string(object_name, module_path_utf16.as_ptr());
+
+        let mut object_attributes = OBJECT_ATTRIBUTES::default();
+        object_attributes.Length = size_of::<OBJECT_ATTRIBUTES>() as u32;
+        object_attributes.ObjectName = object_name;
+        object_attributes.Attributes = 0x40; // Case Insensitive
+
+        let io: Vec<u8> = vec![0; size_of::<IO_STATUS_BLOCK>()];
+        let io: *mut IO_STATUS_BLOCK = std::mem::transmute(io.as_ptr());
+        let object_attributes: *mut OBJECT_ATTRIBUTES = std::mem::transmute(&object_attributes);
+        let hfile: *mut HANDLE = std::mem::transmute(&HANDLE::default());
+        let r =  dinvoke::nt_open_file(
+            hfile, 
+            FILE_READ_DATA | FILE_EXECUTE | FILE_READ_ATTRIBUTES | SYNCHRONIZE, 
+            object_attributes, 
+            io, 
+            FILE_SHARE_READ | FILE_SHARE_DELETE,
+            FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE, 
+            );
+
+        if r != 0
+        {   
+            return Err(lc!("[x] Error opening file."));
+        }
+
+        let max_size: Vec<u8> =vec![0; size_of::<LARGE_INTEGER>()];
+        let max_size: *mut LARGE_INTEGER = std::mem::transmute(max_size.as_ptr());   
+        let hsection: *mut HANDLE = std::mem::transmute(&HANDLE::default());
+        let r = dinvoke::nt_create_section(
+            hsection, 
+            SECTION_ALL_ACCESS,
+            ptr::null_mut(), 
+            max_size, 
+            PAGE_READONLY, 
+            SEC_IMAGE,
+            *hfile
+        );
+
+        if r != 0
+        {   
+            return Err(lc!("[x] Error creating file section in memory."));
+        }
+
+        let offset: Vec<u8> =vec![0; size_of::<LARGE_INTEGER>()];
+        let offset: *mut LARGE_INTEGER = std::mem::transmute(offset.as_ptr()); 
+        let base_address: *mut PVOID = std::mem::transmute(&u64::default());
+        let process_handle = HANDLE { 0: -1};
+        let view_size: *mut usize = std::mem::transmute(&usize::default());
+        let r = dinvoke::nt_map_view_of_section(
+            *hsection, 
+            process_handle, 
+            base_address, 
+            0, 
+            0, 
+            offset, 
+            view_size, 
+            0x2, 
+            0x0, 
+            PAGE_READWRITE
+        );
+
+        if r != 0
+        {  
+            println!("{:X}", r); 
+            return Err(lc!("[x] Error mapping file section."));
+        }
+
+        let base_address: *const u8 = std::mem::transmute(*base_address);
+        let sec_object: PeManualMap = PeManualMap { pe_info : get_pe_metadata(base_address).unwrap(),
+                                                    base_address : base_address as i64, decoy_module: module_path};
+        
+
+        let _r = dinvoke::close_handle(*hfile);
+
+        Ok(sec_object)
+    }
 }

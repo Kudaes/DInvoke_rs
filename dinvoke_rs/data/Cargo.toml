@@ -10,3 +10,4 @@ debug = 0
 
 [dependencies]
 bindings = { path = "../bindings" }
+winapi = "*"

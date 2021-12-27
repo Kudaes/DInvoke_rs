@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, ffi::c_void};
 
-use bindings::Windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, PSTR}, Security::SECURITY_ATTRIBUTES, System::{Diagnostics::Debug::{IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, MINIDUMP_CALLBACK_INFORMATION, MINIDUMP_EXCEPTION_INFORMATION, MINIDUMP_USER_STREAM_INFORMATION}, SystemServices::OVERLAPPED}};
+use bindings::Windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, PSTR}, Security::SECURITY_ATTRIBUTES, System::{Diagnostics::Debug::{IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, MINIDUMP_CALLBACK_INFORMATION, MINIDUMP_EXCEPTION_INFORMATION, MINIDUMP_USER_STREAM_INFORMATION}, SystemServices::OVERLAPPED, Kernel::UNICODE_STRING, WindowsProgramming::{OBJECT_ATTRIBUTES, IO_STATUS_BLOCK}}};
+use winapi::shared::ntdef::LARGE_INTEGER;
 
 pub type PVOID = *mut c_void;
 pub type DWORD = u32;
@@ -26,7 +27,12 @@ pub type NtQueryInformationProcess = unsafe extern "system" fn (HANDLE, u32, PVO
 pub type NtQuerySystemInformation = unsafe extern "system" fn (u32, PVOID, u32, *mut u32) -> i32;
 pub type NtDuplicateObject = unsafe extern "system" fn (HANDLE, HANDLE, HANDLE, *mut HANDLE, u32, u32, u32) -> i32;
 pub type NtQueryObject = unsafe extern "system" fn (HANDLE, u32, PVOID, u32, *mut u32) -> i32;
+pub type NtOpenFile = unsafe extern "system" fn (*mut HANDLE, u32, *mut OBJECT_ATTRIBUTES, *mut IO_STATUS_BLOCK, u32, u32) -> i32;
+pub type NtCreateSection = unsafe extern "system" fn (*mut HANDLE, u32, *mut OBJECT_ATTRIBUTES, *mut LARGE_INTEGER, u32, u32, HANDLE) -> i32;
+pub type NtMapViewOfSection = unsafe extern "system" fn (HANDLE, HANDLE, *mut PVOID, usize, usize, *mut LARGE_INTEGER, *mut usize, u32, u32, u32) -> i32;
 pub type RtlAdjustPrivilege = unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32;
+pub type RtlInitUnicodeString = unsafe extern "system" fn (*mut UNICODE_STRING, *const u16) -> () ;
+pub type RtlZeroMemory = unsafe extern "system" fn (PVOID, usize) -> ();
  
 pub const DLL_PROCESS_DETACH: u32 = 0;
 pub const DLL_PROCESS_ATTACH: u32 = 1;
@@ -46,12 +52,39 @@ pub const SECTION_MEM_READ: u32 = 0x40000000;
 pub const SECTION_MEM_WRITE: u32 = 0x80000000;
 pub const SECTION_MEM_EXECUTE: u32 = 0x20000000;
 
+// Access mask
 pub const GENERIC_READ: u32 = 0x80000000;
 pub const GENERIC_WRITE: u32 = 0x40000000;
 pub const GENERIC_EXECUTE: u32 = 0x20000000;
 pub const GENERIC_ALL: u32 = 0x10000000;
+pub const SECTION_ALL_ACCESS: u32 = 0x10000000;
 
+//File share flags
+pub const FILE_SHARE_NONE: u32 = 0x0;
+pub const FILE_SHARE_READ: u32 = 0x1;
+pub const FILE_SHARE_WRITE: u32 = 0x2;
+pub const FILE_SHARE_DELETE: u32 = 0x4;
 
+//File access flags
+pub const DELETE: u32 = 0x10000;
+pub const FILE_READ_DATA: u32 = 0x1;
+pub const FILE_READ_ATTRIBUTES: u32 = 0x80;
+pub const FILE_READ_EA: u32 = 0x8;
+pub const READ_CONTROL: u32 = 0x20000;
+pub const FILE_WRITE_DATA: u32 = 0x2;
+pub const FILE_WRITE_ATTRIBUTES: u32 = 0x100;
+pub const FILE_WRITE_EA: u32 = 0x10;
+pub const FILE_APPEND_DATA: u32 = 0x4;
+pub const WRITE_DAC: u32 = 0x40000;
+pub const WRITE_OWNER: u32 = 0x80000;
+pub const SYNCHRONIZE: u32 = 0x100000;
+pub const FILE_EXECUTE: u32 = 0x20;
+
+// File open flags
+pub const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x20;
+pub const FILE_NON_DIRECTORY_FILE: u32 = 0x40;
+
+pub const SEC_IMAGE: u32 = 0x1000000;
 
 #[derive(Clone)]
 #[repr(C)]
@@ -75,6 +108,13 @@ impl Default for PeMetadata {
             sections: Vec::default(),  
         }
     }
+}
+
+#[repr(C)]
+pub struct PeManualMap {
+    pub decoy_module: String,
+    pub base_address: i64,
+    pub pe_info: PeMetadata,
 }
 
 #[repr(C)]

@@ -7,7 +7,8 @@ fn main() {
         Windows::Win32::Foundation::{HANDLE,HINSTANCE,PSTR,BOOL},
         Windows::Win32::System::Threading::{GetCurrentProcess,PROCESS_BASIC_INFORMATION},
         Windows::Win32::System::SystemServices::{IMAGE_BASE_RELOCATION,IMAGE_IMPORT_DESCRIPTOR,IMAGE_THUNK_DATA32,IMAGE_THUNK_DATA64,OVERLAPPED},
-        Windows::Win32::System::WindowsProgramming::{PUBLIC_OBJECT_TYPE_INFORMATION,OBJECT_ATTRIBUTES},
+        Windows::Win32::System::WindowsProgramming::{PUBLIC_OBJECT_TYPE_INFORMATION,OBJECT_ATTRIBUTES,IO_STATUS_BLOCK},
         Windows::Win32::Security::SECURITY_ATTRIBUTES,
+        Windows::Win32::System::Kernel::UNICODE_STRING,
     );
 }
