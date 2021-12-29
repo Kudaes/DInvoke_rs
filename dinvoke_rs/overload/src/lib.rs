@@ -4,7 +4,7 @@ use_litcrypt!();
 
 use std::{env, fs, path::Path};
 use bindings::Windows::Win32::Foundation::HANDLE;
-use data::{PeMetadata, PVOID, PAGE_EXECUTE_READ, PAGE_READWRITE};
+use data::{PeMetadata, PVOID, PAGE_READWRITE, PeManualMap, PAGE_EXECUTE_READWRITE};
 use winproc::Process;
 use rand::Rng;
 
@@ -107,21 +107,30 @@ pub fn overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Resul
         }
         
     }
+
+        let decoy_metadata: (PeManualMap, *mut HANDLE) = manualmap::map_to_section(&decoy_module_path)?;
+
+        let result: (PeMetadata,i64)  = overload_to_section(file_content, decoy_metadata.0)?;
+
+        Ok(result)
+}
+
+pub fn overload_to_section (file_content: Vec<u8>, section_metadata: PeManualMap) -> Result<(PeMetadata,i64), String>
+{
     unsafe
     {
-        let decoy_metadata = manualmap::map_to_section(&decoy_module_path)?;
         let region_size: usize;
-        if decoy_metadata.pe_info.is_32_bit
+        if section_metadata.pe_info.is_32_bit
         {
-            region_size = decoy_metadata.pe_info.opt_header_32.SizeOfImage as usize;
+            region_size = section_metadata.pe_info.opt_header_32.SizeOfImage as usize;
         }
         else
         {
-            region_size = decoy_metadata.pe_info.opt_header_64.size_of_image as usize;
+            region_size = section_metadata.pe_info.opt_header_64.size_of_image as usize;
         }
 
         let size: *mut usize = std::mem::transmute(&region_size);
-        let base_address: *mut PVOID = std::mem::transmute(&decoy_metadata.base_address);
+        let base_address: *mut PVOID = std::mem::transmute(&section_metadata.base_address);
         let old_protection: *mut u32 = std::mem::transmute(&u32::default());
         let r = dinvoke::nt_protect_virtual_memory(
             HANDLE { 0: -1}, 
@@ -140,7 +149,11 @@ pub fn overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Resul
         
         let module_ptr: *const u8 = std::mem::transmute(file_content.as_ptr());
         let pe_info = manualmap::get_pe_metadata(module_ptr)?;
-        let _r = manualmap::map_module_to_memory(module_ptr, *base_address, &pe_info)?;
+        
+        manualmap::map_module_to_memory(module_ptr, *base_address, &pe_info)?;
+        manualmap::relocate_module(&pe_info, *base_address);
+        manualmap::rewrite_module_iat(&pe_info, *base_address)?;
+        manualmap::set_module_section_permissions(&pe_info, *base_address)?;
 
         Ok((pe_info, *base_address as i64))
     }

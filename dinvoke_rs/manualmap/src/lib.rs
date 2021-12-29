@@ -571,7 +571,7 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
     } 
 }
 
-pub fn map_to_section(module_path: &str) -> Result<PeManualMap,String>
+pub fn map_to_section(module_path: &str) -> Result<(PeManualMap, *mut HANDLE),String>
 {
     unsafe
     {
@@ -659,6 +659,6 @@ pub fn map_to_section(module_path: &str) -> Result<PeManualMap,String>
 
         let _r = dinvoke::close_handle(*hfile);
 
-        Ok(sec_object)
+        Ok((sec_object,hsection))
     }
 }

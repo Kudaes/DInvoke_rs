@@ -12,3 +12,4 @@ dinvoke = { path = "dinvoke" }
 manualmap = { path = "manualmap" }
 bindings = { path = "bindings" }
 data = { path = "data" }
+overload = { path = "overload"}
