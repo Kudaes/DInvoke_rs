@@ -7,21 +7,24 @@ use std::{collections::HashMap, path::Path};
 use std::{fs, ptr};
 use std::mem::size_of;
 use std::ffi::c_void;
-use bindings::Windows::Win32::Foundation::HANDLE;
-use bindings::Windows::Win32::System::WindowsProgramming::{OBJECT_ATTRIBUTES, IO_STATUS_BLOCK};
-use data::{IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, 
-    PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PVOID, PeMetadata, SECTION_MEM_EXECUTE, SECTION_MEM_READ, 
-    SECTION_MEM_WRITE, FILE_EXECUTE, FILE_READ_ATTRIBUTES, SYNCHRONIZE, FILE_READ_DATA, FILE_SHARE_READ, FILE_SHARE_DELETE, FILE_SYNCHRONOUS_IO_NONALERT, FILE_NON_DIRECTORY_FILE, SECTION_ALL_ACCESS, SEC_IMAGE, PeManualMap};
-use litcrypt::lc;
-
+use winapi::shared::ntdef::LARGE_INTEGER;
 
 use bindings::{
     Windows::Win32::System::Diagnostics::Debug::{IMAGE_OPTIONAL_HEADER32,IMAGE_SECTION_HEADER},
     Windows::Win32::System::Threading::GetCurrentProcess,
     Windows::Win32::System::SystemServices::{IMAGE_BASE_RELOCATION,IMAGE_IMPORT_DESCRIPTOR,IMAGE_THUNK_DATA32,IMAGE_THUNK_DATA64},
     Windows::Win32::System::Kernel::UNICODE_STRING,
+    Windows::Win32::Foundation::HANDLE,
+    Windows::Win32::System::WindowsProgramming::{OBJECT_ATTRIBUTES, IO_STATUS_BLOCK},
 };
-use winapi::shared::ntdef::LARGE_INTEGER;
+
+use data::{IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, 
+    PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PVOID, PeMetadata, SECTION_MEM_EXECUTE, 
+    SECTION_MEM_READ, SECTION_MEM_WRITE, FILE_EXECUTE, FILE_READ_ATTRIBUTES, SYNCHRONIZE, FILE_READ_DATA, FILE_SHARE_READ, FILE_SHARE_DELETE, 
+    FILE_SYNCHRONOUS_IO_NONALERT, FILE_NON_DIRECTORY_FILE, SECTION_ALL_ACCESS, SEC_IMAGE, PeManualMap};
+
+use litcrypt::lc;
+
 
 /// Manually maps a PE from disk to the memory of the current process.
 ///
@@ -175,6 +178,10 @@ pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String> {
     }
 }
 
+/// Maps a module to a valid memory space in the current process.
+///
+/// The parameters required are a vector with the module content, the base address where the module should be
+/// mapped and the module's metadata.
 pub fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_info: &PeMetadata) -> Result<(),String>{
 
     if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) 
@@ -571,7 +578,10 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
     } 
 }
 
-pub fn map_to_section(module_path: &str) -> Result<(PeManualMap, *mut HANDLE),String>
+/// Map a module to a memory section.
+///
+/// The parameter required is the file path of the module that should be mapped.
+pub fn map_to_section(module_path: &str) -> Result<(PeManualMap,HANDLE),String>
 {
     unsafe
     {
@@ -631,11 +641,10 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap, *mut HANDLE),St
         let offset: Vec<u8> =vec![0; size_of::<LARGE_INTEGER>()];
         let offset: *mut LARGE_INTEGER = std::mem::transmute(offset.as_ptr()); 
         let base_address: *mut PVOID = std::mem::transmute(&u64::default());
-        let process_handle = HANDLE { 0: -1};
         let view_size: *mut usize = std::mem::transmute(&usize::default());
         let r = dinvoke::nt_map_view_of_section(
             *hsection, 
-            process_handle, 
+            HANDLE { 0: -1}, 
             base_address, 
             0, 
             0, 
@@ -648,7 +657,6 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap, *mut HANDLE),St
 
         if r != 0
         {  
-            println!("{:X}", r); 
             return Err(lc!("[x] Error mapping file section."));
         }
 
@@ -659,6 +667,6 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap, *mut HANDLE),St
 
         let _r = dinvoke::close_handle(*hfile);
 
-        Ok((sec_object,hsection))
+        Ok((sec_object, *hsection))
     }
 }

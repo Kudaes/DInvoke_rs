@@ -15,8 +15,6 @@ use litcrypt::lc;
 use winproc::Process;
 use winapi::shared::ntdef::LARGE_INTEGER;
 
-
-
 /// Retrieves the base address of a module loaded in the current process.
 ///
 /// In case that the module can't be found in the current process, it will
@@ -202,6 +200,7 @@ fn get_forward_address(function_ptr: *mut u8) -> i64 {
         function_ptr as i64
     }
 }
+
 pub fn get_api_mapping() -> HashMap<String,String> {
 
     unsafe 
@@ -410,8 +409,8 @@ pub fn get_ntdll_eat(module_base_address: i64) -> EAT {
 
 /// Returns the syscall id that correspond to the function specified.
 ///
-/// This functions will return -1 in case that the syscall id of the function
-/// specified could not be found.
+/// This functions will return -1 in case that the syscall id of the specified function
+/// could not be retrieved.
 ///
 /// # Examples
 ///
@@ -530,9 +529,15 @@ pub fn prepare_syscall(id: u32) -> i64 {
 ///
 /// ```ignore
 ///    let pe = manualmap::read_and_map_module("c:\\some\\random\\file.dll").unwrap();
-///    let ret = dinvoke::call_module_entry_point(&pe.0, pe.1);
+///    let ret = dinvoke::call_module_entry_point(pe.0, pe.1);
+/// 
+///    match ret
+///    {
+///         Ok(()) => println!("Module entry point successfully executed."),
+///         Err(e) => println!("Error ocurred: {}", e)
+///    }
 /// ```
-pub fn call_module_entry_point(pe_info: &PeMetadata, module_base_address: i64) -> Result<(), String> {
+pub fn call_module_entry_point(pe_info: PeMetadata, module_base_address: i64) -> Result<(), String> {
 
     let entry_point;
     if pe_info.is_32_bit 
@@ -574,8 +579,11 @@ pub fn call_module_entry_point(pe_info: &PeMetadata, module_base_address: i64) -
 /// if ntdll != 0
 /// {
 ///     let ordinal: u32 = 8; 
-///     let addr = dinvoke::get_function_address_ordinal(ntdll, ordinal);    
-///     println!("The function with ordinal 8 is located at 0x{:X}.", addr);
+///     let addr = dinvoke::get_function_address_ordinal(ntdll, ordinal);
+///     if addr != 0
+///     { 
+///         println!("The function with ordinal 8 is located at 0x{:X}.", addr);
+///     }
 /// }
 /// ```
 pub fn get_function_address_by_ordinal(module_base_address: i64, ordinal: u32) -> i64 {
@@ -590,8 +598,7 @@ pub fn get_function_address_by_ordinal(module_base_address: i64, ordinal: u32) -
 ///
 /// This functions internally calls LdrGetProcedureAddress.
 ///
-/// In case that the function's address can't be retrieved, it will return an Err with a 
-/// descriptive error message.
+/// In case that the function's address can't be retrieved, it will return 0.
 ///
 /// # Examples
 ///
@@ -602,7 +609,10 @@ pub fn get_function_address_by_ordinal(module_base_address: i64, ordinal: u32) -
 /// {
 ///     let ordinal: u32 = 8; // Ordinal 8 represents the function RtlDispatchAPC
 ///     let addr = dinvoke::ldr_get_procedure_address(ntdll,"", 8);
-///     println!("The function with ordinal 8 is located at 0x{:X}.", addr);
+///     if addr != 0
+///     {
+///         println!("The function with ordinal 8 is located at 0x{:X}.", addr);
+///     }
 /// }
 /// ```
 pub fn ldr_get_procedure_address (module_handle: i64, function_name: &str, ordinal: u32) -> i64 {

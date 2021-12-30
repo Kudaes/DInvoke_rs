@@ -4,10 +4,14 @@ use_litcrypt!();
 
 use std::{env, fs, path::Path};
 use bindings::Windows::Win32::Foundation::HANDLE;
-use data::{PeMetadata, PVOID, PAGE_READWRITE, PeManualMap, PAGE_EXECUTE_READWRITE};
+use data::{PeMetadata, PVOID, PAGE_READWRITE, PeManualMap};
 use winproc::Process;
 use rand::Rng;
 
+/// Locate a legitimate module of certain minimun size.
+/// 
+/// It will return the path of the selected module or an empty string in case 
+/// that it fails to find a suitable module.
 pub fn find_decoy_module (min_size: i64) -> String
 {
 
@@ -66,6 +70,23 @@ pub fn find_decoy_module (min_size: i64) -> String
     "".to_string()
 } 
 
+/// Locate and load a decoy module into memory creating a legitimate file-backed memory section within the process.
+/// Afterwards overload that module by manually mapping a payload (from disk) that will appear to be file-backed  
+/// by the legitimate decoy module.
+///
+/// It will return either a pair (PeMetadata,i64) containing the mapped PE (payload)
+/// metadata and its base address or a String with a descriptive error message.
+///
+/// # Examples
+///
+/// ```
+/// let module = overload::read_and_overload("c:\\temp\\payload.dll","");
+///
+/// match module {
+///     Ok(x) => println!("File-backed payload is located at 0x{:X}.", x.1),
+///     Err(e) => println!("Error ocurred: {}", e),      
+/// }
+/// ```
 pub fn read_and_overload(payload_path: &str, decoy_module_path: &str) -> Result<(PeMetadata,i64), String>
 {
 
@@ -81,6 +102,26 @@ pub fn read_and_overload(payload_path: &str, decoy_module_path: &str) -> Result<
     Ok(result)
 }
 
+/// Locate and load a decoy module into memory creating a legitimate file-backed memory section within the process.
+/// Afterwards overload that module by manually mapping a payload (from memory) that will appear to be file-backed 
+/// by the legitimate decoy module.
+///
+/// It will return either a pair (PeMetadata,i64) containing the mapped PE (payload)
+/// metadata and its base address or a String with a descriptive error message.
+///
+/// # Examples
+///
+/// ```
+/// use std::fs;
+///
+/// let payload_content = fs::read("c:\\temp\\payload.dll").expect("[x] Error opening the specified file.");
+/// let module = overload::overload_module(payload_content,"");
+///
+/// match module {
+///     Ok(x) => println!("File-backed payload is located at 0x{:X}.", x.1),
+///     Err(e) => println!("Error ocurred: {}", e),      
+/// }
+/// ```
 pub fn overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Result<(PeMetadata,i64), String> 
 {   
     let mut decoy_module_path = decoy_module_path.to_string();
@@ -108,13 +149,32 @@ pub fn overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Resul
         
     }
 
-        let decoy_metadata: (PeManualMap, *mut HANDLE) = manualmap::map_to_section(&decoy_module_path)?;
+        let decoy_metadata: (PeManualMap, HANDLE) = manualmap::map_to_section(&decoy_module_path)?;
 
-        let result: (PeMetadata,i64)  = overload_to_section(file_content, decoy_metadata.0)?;
+        let result: (PeMetadata,i64) = overload_to_section(file_content, decoy_metadata.0)?;
 
         Ok(result)
 }
 
+/// Load a payload from memory to an existing memory section.
+///
+/// It will return either a pair (PeMetadata,i64) containing the mapped PE (payload)
+/// metadata and its base address or a String with a descriptive error message.
+///
+/// # Examples
+///
+/// ```
+/// use std::fs;
+///
+/// let payload_content = fs::read("c:\\temp\\payload.dll").expect("[x] Error opening the specified file.");
+/// let section_metadata: (PeManualMap, HANDLE) = manualmap::map_to_section("c:\\windows\\system32\\signedmodule.dll")?;
+/// let module: (PeMetadata,i64) = overload_to_section(file_content, section_metadata.0)?;
+/// 
+/// match module {
+///     Ok(x) => println!("File-backed payload is located at 0x{:X}.", x.1),
+///     Err(e) => println!("Error ocurred: {}", e),      
+/// }
+/// ```
 pub fn overload_to_section (file_content: Vec<u8>, section_metadata: PeManualMap) -> Result<(PeMetadata,i64), String>
 {
     unsafe
