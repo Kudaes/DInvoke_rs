@@ -8,9 +8,9 @@ Features:
 * Direct syscall execution from Rust.
 * Manually map PE modules from disk or directly from memory.
 * PE headers parsing.
+* Map PE modules into sections backed by arbitrary modules on disk.
 
 TODO:
-* Map PE modules into sections backed by arbitrary modules on disk.
 * PE headers manipulation.
 
 # Credit
