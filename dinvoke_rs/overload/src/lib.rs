@@ -168,7 +168,7 @@ pub fn overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Resul
 ///
 /// let payload_content = fs::read("c:\\temp\\payload.dll").expect("[x] Error opening the specified file.");
 /// let section_metadata: (PeManualMap, HANDLE) = manualmap::map_to_section("c:\\windows\\system32\\signedmodule.dll")?;
-/// let module: (PeMetadata,i64) = overload_to_section(file_content, section_metadata.0)?;
+/// let module: (PeMetadata,i64) = overload_to_section(payload_content, section_metadata.0)?;
 /// 
 /// match module {
 ///     Ok(x) => println!("File-backed payload is located at 0x{:X}.", x.1),
