@@ -31,7 +31,6 @@ Since we are using [LITCRYPT](https://github.com/anvie/litcrypt.rs) plugin to ob
 After that, you can open the project using your favorite IDE.
     
     code .
-
 # Example 1 - Resolving Exported Unmanaged APIs
 
 The example below demonstrates how to use DInvoke_rs to dynamically find and call exports of a DLL.
