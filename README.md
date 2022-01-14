@@ -1,6 +1,6 @@
 # DInvoke_rs
 
-Rust port of [Dinvoke](https://github.com/TheWover/DInvoke). DInvoke_rs may be used for many purposes such as PE parsing, dynamic exported functions resolution, dynamically loading PE plugins at runtime, API hooks evasion and more. This project is meant to be used as a template (just add your own Rust code on top of it) or as a nested crate that can be imported on your own project (remove the src package and compile it as a lib).
+Rust port of [Dinvoke](https://github.com/TheWover/DInvoke). DInvoke_rs may be used for many purposes such as PE parsing, dynamic exported functions resolution, dynamically loading PE plugins at runtime, API hooks evasion and more. This project is meant to be used as a template (just add your own Rust code on top of it) or as a nested crate that can be imported on your own project.
 
 Features:
 * Dynamically resolve and invoke undocumented Windows APIs from Rust.
@@ -9,6 +9,7 @@ Features:
 * Manually map PE modules from disk or directly from memory.
 * PE headers parsing.
 * Map PE modules into sections backed by arbitrary modules on disk.
+* Module fluctuation to hide mapped PEs (concurrency supported).
 
 TODO:
 * PE headers manipulation.
@@ -21,13 +22,15 @@ All the credits go to the creators of the original C# implementation of this too
 
 I just created this port as a way to learn Rust myself and with the idea of facilitate to the Red Team community the transition from more common and known languages (like C++ or C#) to Rust to develop their hacking tools.  
 
-# Compile requirements
+# Usage
 
 Since we are using [LITCRYPT](https://github.com/anvie/litcrypt.rs) plugin to obfuscate string literals, it is required to set up the environment variable LITCRYPT_ENCRYPT_KEY before compiling the code:
 
 	set LITCRYPT_ENCRYPT_KEY="yoursupersecretkey"
 
-If you dont set up this environment variable you will se a lot of errors at the time of opening the project or importing the code into your own crate. This feature will probably be removed in the near future since LLVM string obfuscation may be a better approach.
+After that, you can open the project using your favorite IDE.
+    
+    code .
 
 # Example 1 - Resolving Exported Unmanaged APIs
 
@@ -146,7 +149,7 @@ fn main() {
 ```
 
 # Example 4 - Manual PE mapping
-In this last example, DInvoke_rs is used to manually map a fresh copy of ntdll.dll, without any EDR hooks. Then that fresh ntdll.dll copy can be used to execute any desired function. 
+In this example, DInvoke_rs is used to manually map a fresh copy of ntdll.dll, without any EDR hooks. Then that fresh ntdll.dll copy can be used to execute any desired function. 
 
 This manual map can also be executed from memory (use manually_map_module() in that case), allowing the classic reflective dll injection.
 
@@ -157,7 +160,7 @@ fn main() {
     unsafe 
     {
 
-        let ntdll = manualmap::read_and_map_module("C:\\Windows\\System32\\ntdll.dll").unwrap();
+        let ntdll: (PeMetadata, i64) = manualmap::read_and_map_module("C:\\Windows\\System32\\ntdll.dll").unwrap();
         
         let func_ptr:  unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32; // Function header available at data::RtlAdjustPrivilege
         let ret: Option<i32>; // RtlAdjustPrivilege returns an NSTATUS value, which is an i32
@@ -173,6 +176,92 @@ fn main() {
 	            else { println!("[x] NTSTATUS == {:X}", x as u32); },
             None => panic!("[x] Error!"),
         }
+
+    }
+}
+
+```
+
+# Example 5 - Overload memory section
+In the following sample, DInvoke_rs is used to create a file-backed memory section, overloading it afterwards by manually mapping a PE. The memory section will point to a legitimate file located in %WINDIR%\System32\ by default, but any other decoy module can be used.
+
+This overload can also be executed mapping a PE from memory (as it is shown in the following example), allowing to perform the overload without writing the payload to disk.
+
+```rust
+
+fn main() {
+
+    unsafe 
+    {
+
+        let payload: Vec<u8> = your_download_function();
+
+        // This will map your payload into a legitimate file-backed memory section.
+        let overload: (PeMetadata, i64) = overload::overload_module(payload, "").unwrap();
+        
+        // Then any exported function of the mapped PE can be dynamically called.
+        // Let's say we want to execute a function with header pub fn random_function(i32, i32) -> i32
+        let func_ptr:  unsafe extern "Rust" fn (i32, i32) -> i32; // Function header
+        let ret: Option<i32>; // The value that the called function will return
+        let parameter1: i32 = 10;
+        let parameter2: i32 = 20;
+        dinvoke::dynamic_invoke!(overload.1,"random_function",func_ptr,ret,parameter1,parameter2);
+
+        match ret {
+            Some(x) => 
+                println!("The function returned the value {}", x),
+            None => panic!("[x] Error!"),
+        }
+
+    }
+}
+
+```
+
+# Example 6 - Module fluctuation
+DInvoke_rs allows to hide mapped PEs when they are not being used, making it harder for EDR memory inspection to detect the presence of a suspicious dll in your process. 
+
+For example, lets say we want to map a fresh copy of ntdll.dll in order to evade EDR hooks. Since two ntdll.dll in the same process could be considered a suspicious behaviour, we can map ntdll and hide it whenever we are not using it. This is very similar to the shellcode fluctuation technique, althought in this scenario we can take advantage of the fact that we are mapping a PE into a legitimate file-backed memory section, so we can replace the ntdll content for the original decoy module's content that the section is pointing to.
+
+```rust
+
+fn main() {
+
+    unsafe 
+    {
+
+        // The manager will take care of the hiding/remapping process and it can be used in multi-threading scenarios 
+        let mut manager = Manager::new();
+
+        // This will map ntdll.dll into a memory section pointing to cdp.dll. 
+        // It will return the payload (ntdll) content, the decoy module (cdp) content and the payload base address.
+        let overload: ((Vec<u8>, Vec<u8>), i64) = overload::managed_read_and_overload("c:\\windows\\system32\\ntdll.dll", "c:\\windows\\system32\\cdp.dll").unwrap();
+        
+        // This will allow the manager to start taking care of the module fluctuation process over this mapped PE.
+        // Also, it will hide ntdll, replacing its content with the legitimate cdp.dll content.
+        let _r = manager.new_module(overload.1, overload.0.0, overload.0.1);
+
+        // Now, if we want to use our fresh ntdll copy, we just need to tell the manager to remap our payload into the memory section.
+        manager.map_module(overload.1);
+
+        // After ntdll has being remapped, we can dynamically call RtlAdjustPrivilege (or any other function) without worrying about EDR hooks.
+        let func_ptr:  unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32; // Function header available at data::RtlAdjustPrivilege
+        let ret: Option<i32>; // RtlAdjustPrivilege returns an NSTATUS value, which is an i32
+        let privilege: u32 = 20; // This value matches with SeDebugPrivilege
+        let enable: u8 = 1; // Enable the privilege
+        let current_thread: u8 = 0; // Enable the privilege for the current process, not only for the current thread
+        let enabled: *mut u8 = std::mem::transmute(&u8::default()); 
+        dinvoke::dynamic_invoke!(overload.1,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled);
+
+        match ret {
+            Some(x) => 
+                if x == 0 { println!("NTSTATUS == Success. Privilege enabled."); } 
+                else { println!("[x] NTSTATUS == {:X}", x as u32); },
+            None => panic!("[x] Error!"),
+        }
+
+        // Since we dont want to use our ntdll copy for the moment, we hide it again. It can we remapped at any time.
+        manager.hide(overload.1);
 
     }
 }
