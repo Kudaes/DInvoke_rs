@@ -670,3 +670,17 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap,HANDLE),String>
         Ok((sec_object, *hsection))
     }
 }
+
+pub fn map_to_allocated_memory (module_ptr: *const u8, image_ptr: *mut c_void, pe_info: &PeMetadata) -> Result<(), String> {
+
+    map_module_to_memory(module_ptr, image_ptr, &pe_info)?;
+    
+    relocate_module(&pe_info, image_ptr);
+
+    rewrite_module_iat(&pe_info, image_ptr)?;
+
+    set_module_section_permissions(&pe_info, image_ptr)?;
+
+    Ok(())  
+
+}
