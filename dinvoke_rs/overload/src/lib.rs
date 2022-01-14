@@ -204,8 +204,6 @@ pub fn overload_to_section (file_content: Vec<u8>, section_metadata: PeManualMap
         {
             return Err(lc!("[x] Error changing memory protection."));
         }
-
-        dinvoke::rtl_zero_memory(*base_address, region_size);
         
         let module_ptr: *const u8 = std::mem::transmute(file_content.as_ptr());
         let pe_info = manualmap::get_pe_metadata(module_ptr)?;

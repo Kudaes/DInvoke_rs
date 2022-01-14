@@ -3,6 +3,7 @@ extern crate litcrypt;
 use_litcrypt!();
 
 use std::mem::size_of;
+use std::panic;
 use std::{collections::HashMap, ptr};
 use std::ffi::CString;
 use bindings::Windows::Win32::System::Kernel::UNICODE_STRING;
@@ -170,6 +171,19 @@ fn get_forward_address(function_ptr: *mut u8) -> i64 {
         let forwarded_export_name = values[1].to_string();
 
         let api_set = get_api_mapping();
+
+        let prev_hook = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+        let result = panic::catch_unwind(|| {
+            format!("{}{}",&forwarded_module_name[..forwarded_module_name.len() - 2], ".dll");
+        });
+        panic::set_hook(prev_hook);
+
+        if result.is_err()
+        {
+            return function_ptr as i64;
+        }
+
         let lookup_key = format!("{}{}",&forwarded_module_name[..forwarded_module_name.len() - 2], ".dll");
 
         if api_set.contains_key(&lookup_key)
