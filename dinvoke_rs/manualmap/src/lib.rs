@@ -521,12 +521,12 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
         }
 
         let handle = GetCurrentProcess();
-        let base_address: *mut PVOID = std::mem::transmute(image_ptr);
+        let base_address: *mut PVOID = std::mem::transmute(&image_ptr);
         let size: *mut usize = std::mem::transmute(&i64::default());
         *size = base_of_code;
         let old_protection: *mut u32 = std::mem::transmute(&u32::default());
         let _ret = dinvoke::nt_protect_virtual_memory(handle, base_address, size, PAGE_READONLY, old_protection);
-
+       
         for section in &pe_info.sections
         {
             let is_read = (section.Characteristics.0 & SECTION_MEM_READ) != 0;

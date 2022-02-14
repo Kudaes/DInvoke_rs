@@ -171,6 +171,7 @@ impl Manager {
 
                     let old_protection: *mut u32 = std::mem::transmute(&u32::default());
                     let ret = dinvoke::nt_protect_virtual_memory(handle, base_address, size, PAGE_READWRITE, old_protection);
+                    dinvoke::rtl_zero_memory(*base_address, *size);
 
                     if ret != 0
                     {
