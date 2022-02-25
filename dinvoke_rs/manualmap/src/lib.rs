@@ -85,7 +85,8 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,i64), Str
     unsafe 
     {
         let handle = GetCurrentProcess();
-        let base_address: *mut PVOID = std::mem::transmute(&u64::default());
+        let a = u64::default();
+        let base_address: *mut PVOID = std::mem::transmute(&a);
         let zero_bits = 0 as usize;
         let size: *mut usize = std::mem::transmute(&dwsize);
         let ret = dinvoke::nt_allocate_virtual_memory(handle, base_address, zero_bits, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
