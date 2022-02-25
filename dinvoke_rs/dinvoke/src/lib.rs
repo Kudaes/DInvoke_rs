@@ -703,8 +703,7 @@ pub fn load_library_a(module: &str) -> i64 {
 
 /// Opens a HANDLE to a process.
 ///
-/// It will return either a HANDLE object or an Err with a descriptive error message. If the function
-/// fails the HANDLE will have value -1 or 0.
+/// If the function fails, it will return a null HANDLE.
 ///
 /// # Examples
 ///
@@ -712,7 +711,7 @@ pub fn load_library_a(module: &str) -> i64 {
 /// let pid = 792u32;
 /// let handle = dinvoke::open_process(0x0040, 0, pid); //PROCESS_DUP_HANDLE access right.
 /// 
-/// if handle.0 != 0 && handle.0 != -1
+/// if handle.0 != 0
 /// {
 ///     println!("Handle to process with id {} with PROCESS_DUP_HANDLE access right successfully obtained.", pid);
 /// }
