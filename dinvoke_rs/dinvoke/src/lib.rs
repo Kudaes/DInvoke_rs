@@ -6,15 +6,132 @@ use std::mem::size_of;
 use std::panic;
 use std::{collections::HashMap, ptr};
 use std::ffi::CString;
+use bindings::Windows::Win32::System::Diagnostics::Debug::{GetThreadContext,SetThreadContext};
 use bindings::Windows::Win32::System::Kernel::UNICODE_STRING;
 use bindings::Windows::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
 use bindings::Windows::Win32::System::WindowsProgramming::{OBJECT_ATTRIBUTES, IO_STATUS_BLOCK};
-use bindings::Windows::Win32::{Foundation::{HANDLE, HINSTANCE, PSTR}, {System::Threading::{GetCurrentProcess}}};
-use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, DLL_PROCESS_ATTACH, EAT, EntryPoint, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, PVOID, PeMetadata};
+use bindings::Windows::Win32::{Foundation::{HANDLE, HINSTANCE, PSTR}, {System::Threading::{GetCurrentProcess,GetCurrentThread}}};
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, DLL_PROCESS_ATTACH, EAT, EntryPoint, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, PVOID, PeMetadata, CONTEXT, NtAllocateVirtualMemoryArgs, EXCEPTION_POINTERS, NtOpenProcessArgs, CLIENT_ID, PROCESS_QUERY_LIMITED_INFORMATION, NtProtectVirtualMemoryArgs, PAGE_READONLY, NtWriteVirtualMemoryArgs, ExceptionHandleFunction, PS_ATTRIBUTE_LIST, NtCreateThreadExArgs};
 use libc::c_void;
 use litcrypt::lc;
 use winproc::Process;
 use winapi::shared::ntdef::LARGE_INTEGER;
+
+static mut HARDWARE_EXCEPTION: bool = false;
+static mut HARDWARE_EXCEPTION_FUNCTION: ExceptionHandleFunction = ExceptionHandleFunction::NtOpenProcess;
+static mut NT_ALLOCATE_VIRTUAL_MEMORY_ARGS: NtAllocateVirtualMemoryArgs = NtAllocateVirtualMemoryArgs{handle: HANDLE {0: -1}, base_address: ptr::null_mut()};
+static mut NT_OPEN_PROCESS_ARGS: NtOpenProcessArgs = NtOpenProcessArgs{handle: ptr::null_mut(), access:0, attributes: ptr::null_mut(), client_id: ptr::null_mut()};
+static mut NT_PROTECT_VIRTUAL_MEMORY_ARGS: NtProtectVirtualMemoryArgs = NtProtectVirtualMemoryArgs{handle: HANDLE {0: -1}, base_address: ptr::null_mut(), size: ptr::null_mut(), protection: 0};
+static mut NT_WRITE_VIRTUAL_MEMORY_ARGS: NtWriteVirtualMemoryArgs = NtWriteVirtualMemoryArgs{handle: HANDLE {0: -1}, base_address: ptr::null_mut(), buffer: ptr::null_mut(), size: 0usize};
+static mut NT_CREATE_THREAD_EX_ARGS: NtCreateThreadExArgs = NtCreateThreadExArgs{thread:ptr::null_mut(), access: 0, attributes: ptr::null_mut(), process: HANDLE {0: -1}};
+
+
+pub fn use_hardware_exceptions(value: bool)
+{
+    unsafe
+    {
+        HARDWARE_EXCEPTION = value;
+    }
+} 
+
+pub fn set_hardware_breakpoint(address: usize) 
+{
+    unsafe
+    {
+        let mut context = CONTEXT::default();   
+        context.ContextFlags = 0x100000 | 0x10; // CONTEXT_DEBUG_REGISTERS
+        let mut lp_context: *mut bindings::Windows::Win32::System::Diagnostics::Debug::CONTEXT = std::mem::transmute(&context);
+        GetThreadContext(GetCurrentThread(), lp_context);
+
+        let mut context: *mut CONTEXT = std::mem::transmute(lp_context);
+        (*context).Dr0 = address as u64;
+        (*context).Dr6 = 0;
+        (*context).Dr7 = ((*context).Dr7 & !(((1 << 2) - 1) << 16)) | (0 << 16);
+        (*context).Dr7 = ((*context).Dr7 & !(((1 << 2) - 1) << 18)) | (0 << 18);
+        (*context).Dr7 = ((*context).Dr7 & !(((1 << 1) - 1) << 0)) | (1 << 0);
+
+        (*context).ContextFlags = 0x100000 | 0x10;
+        lp_context = std::mem::transmute(context);
+        
+        SetThreadContext( GetCurrentThread(), lp_context );
+    }
+}
+
+pub fn find_syscall_address(address: usize) -> usize
+{
+    unsafe
+    {
+        let stub: [u8;2] = [ 0x0F, 0x05 ];
+        let mut ptr:*mut u8 = address as *mut u8;
+        for _i in 0..23
+        {
+            if *(ptr.add(1)) == stub[0] && *(ptr.add(2)) == stub[1]
+            {
+                return ptr.add(1) as usize;
+            }
+
+            ptr = ptr.add(1);
+        }
+    }
+
+    0usize
+}
+
+pub unsafe extern "system" fn breakpoint_handler (exceptioninfo: *mut EXCEPTION_POINTERS) -> i32
+{
+    if (*(*(exceptioninfo)).exception_record).ExceptionCode.0 == 0x80000004 // STATUS_SINGLE_STEP
+    {
+        if ((*(*exceptioninfo).context_record).Dr7 & 1) == 1
+        {
+            if (*(*exceptioninfo).context_record).Rip == (*(*exceptioninfo).context_record).Dr0
+            {
+                (*(*exceptioninfo).context_record).Dr0 = 0;
+                match HARDWARE_EXCEPTION_FUNCTION
+                {
+                    ExceptionHandleFunction::NtAllocateVirtualMemory =>
+                    { 
+                        (*(*exceptioninfo).context_record).R10 = NT_ALLOCATE_VIRTUAL_MEMORY_ARGS.handle.0 as u64;
+                        (*(*exceptioninfo).context_record).Rdx = std::mem::transmute(NT_ALLOCATE_VIRTUAL_MEMORY_ARGS.base_address);
+
+                    }, 
+                    ExceptionHandleFunction::NtProtectVirtualMemory => 
+                    {
+                        (*(*exceptioninfo).context_record).R10 = NT_PROTECT_VIRTUAL_MEMORY_ARGS.handle.0 as u64;
+                        (*(*exceptioninfo).context_record).Rdx = std::mem::transmute(NT_PROTECT_VIRTUAL_MEMORY_ARGS.base_address);
+                        (*(*exceptioninfo).context_record).R8 = std::mem::transmute(NT_PROTECT_VIRTUAL_MEMORY_ARGS.size);
+                        (*(*exceptioninfo).context_record).R9 = NT_PROTECT_VIRTUAL_MEMORY_ARGS.protection as u64;
+
+                    },
+                    ExceptionHandleFunction::NtOpenProcess =>
+                    {
+                        (*(*exceptioninfo).context_record).R10 = std::mem::transmute(NT_OPEN_PROCESS_ARGS.handle);
+                        (*(*exceptioninfo).context_record).Rdx = NT_OPEN_PROCESS_ARGS.access as u64;
+                        (*(*exceptioninfo).context_record).R8 = std::mem::transmute(NT_OPEN_PROCESS_ARGS.attributes);
+                        (*(*exceptioninfo).context_record).R9 = std::mem::transmute(NT_OPEN_PROCESS_ARGS.client_id);
+
+                    },
+                    ExceptionHandleFunction::NtWriteVirtualMemory =>
+                    {
+                        (*(*exceptioninfo).context_record).R10 = NT_WRITE_VIRTUAL_MEMORY_ARGS.handle.0 as u64;
+                        (*(*exceptioninfo).context_record).Rdx = std::mem::transmute(NT_WRITE_VIRTUAL_MEMORY_ARGS.base_address);
+                        (*(*exceptioninfo).context_record).R8 = std::mem::transmute(NT_WRITE_VIRTUAL_MEMORY_ARGS.buffer);
+                        (*(*exceptioninfo).context_record).R9 = NT_WRITE_VIRTUAL_MEMORY_ARGS.size as u64;
+                    },
+                    ExceptionHandleFunction::NtCreateThreadEx =>
+                    {
+                        (*(*exceptioninfo).context_record).R10 = std::mem::transmute(NT_CREATE_THREAD_EX_ARGS.thread);
+                        (*(*exceptioninfo).context_record).Rdx = NT_CREATE_THREAD_EX_ARGS.access as u64;
+                        (*(*exceptioninfo).context_record).R8 = std::mem::transmute(NT_CREATE_THREAD_EX_ARGS.attributes);
+                        (*(*exceptioninfo).context_record).R9 = NT_CREATE_THREAD_EX_ARGS.process.0 as u64;
+                    }                  
+                    _ => (*(*exceptioninfo).context_record).Rip += 1
+                }
+            }
+        }
+        return -1; // EXCEPTION_CONTINUE_EXECUTION
+    }
+    0 // EXCEPTION_CONTINUE_EXECUTION
+}
 
 /// Retrieves the base address of a module loaded in the current process.
 ///
@@ -782,13 +899,30 @@ pub fn close_handle(handle: HANDLE) -> bool {
 /// Dynamically calls NtWriteVirtualMemory.
 ///
 /// It will return the NTSTATUS value returned by the call.
-pub fn nt_write_virtual_memory (handle: HANDLE, base_address: PVOID, buffer: PVOID, size: usize, bytes_written: *mut usize) -> i32 {
+pub fn nt_write_virtual_memory (mut handle: HANDLE, base_address: PVOID, mut buffer: PVOID, mut size: usize, bytes_written: *mut usize) -> i32 {
 
     unsafe 
     {
         let ret;
         let func_ptr: data::NtWriteVirtualMemory;
         let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+
+        if HARDWARE_EXCEPTION
+        {
+            let addr = get_function_address(ntdll, &lc!("NtWriteVirtualMemory")) as usize;
+            HARDWARE_EXCEPTION_FUNCTION =  ExceptionHandleFunction::NtWriteVirtualMemory;
+            NT_WRITE_VIRTUAL_MEMORY_ARGS.handle = handle;
+            NT_WRITE_VIRTUAL_MEMORY_ARGS.base_address = base_address;
+            NT_WRITE_VIRTUAL_MEMORY_ARGS.buffer = buffer;
+            NT_WRITE_VIRTUAL_MEMORY_ARGS.size = size;
+            set_hardware_breakpoint(find_syscall_address(addr));
+
+            handle = HANDLE {0: -1};
+            let buff = vec![20];
+            buffer = std::mem::transmute(buff.as_ptr());
+            size = buff.len();
+        }
+
         dynamic_invoke!(ntdll,&lc!("NtWriteVirtualMemory"),func_ptr,ret,handle,base_address,buffer,size,bytes_written);
 
         match ret {
@@ -802,13 +936,26 @@ pub fn nt_write_virtual_memory (handle: HANDLE, base_address: PVOID, buffer: PVO
 /// Dynamically calls NtAllocateVirtualMemory.
 ///
 /// It will return the NTSTATUS value returned by the call.
-pub fn nt_allocate_virtual_memory (handle: HANDLE, base_address: *mut PVOID, zero_bits: usize, size: *mut usize, allocation_type: u32, protection: u32) -> i32 {
+pub fn nt_allocate_virtual_memory (mut handle: HANDLE, mut base_address: *mut PVOID, zero_bits: usize, size: *mut usize, allocation_type: u32, protection: u32) -> i32 {
 
     unsafe 
     {
         let ret;
         let func_ptr: data::NtAllocateVirtualMemory;
         let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        
+        if HARDWARE_EXCEPTION
+        {
+            let addr = get_function_address(ntdll, &lc!("NtAllocateVirtualMemory")) as usize;
+            HARDWARE_EXCEPTION_FUNCTION = ExceptionHandleFunction::NtAllocateVirtualMemory;
+            NT_ALLOCATE_VIRTUAL_MEMORY_ARGS.handle = handle;
+            NT_ALLOCATE_VIRTUAL_MEMORY_ARGS.base_address = base_address;
+            set_hardware_breakpoint(find_syscall_address(addr));
+
+            handle = HANDLE {0: -1};
+            base_address = ptr::null_mut();
+        }
+        
         dynamic_invoke!(ntdll,&lc!("NtAllocateVirtualMemory"),func_ptr,ret,handle,base_address,zero_bits,size,allocation_type,protection);
 
         match ret {
@@ -821,13 +968,30 @@ pub fn nt_allocate_virtual_memory (handle: HANDLE, base_address: *mut PVOID, zer
 /// Dynamically calls NtProtectVirtualMemory.
 ///
 /// It will return the NTSTATUS value returned by the call.
-pub fn nt_protect_virtual_memory (handle: HANDLE, base_address: *mut PVOID, size: *mut usize, new_protection: u32, old_protection: *mut u32) -> i32 {
+pub fn nt_protect_virtual_memory (mut handle: HANDLE, mut base_address: *mut PVOID, mut size: *mut usize, mut new_protection: u32, old_protection: *mut u32) -> i32 {
     
     unsafe 
     {
         let ret;
         let func_ptr: data::NtProtectVirtualMemory;
         let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+
+        if HARDWARE_EXCEPTION
+        {
+            let addr = get_function_address(ntdll, &lc!("NtProtectVirtualMemory")) as usize;
+            HARDWARE_EXCEPTION_FUNCTION =  ExceptionHandleFunction::NtProtectVirtualMemory;
+            NT_PROTECT_VIRTUAL_MEMORY_ARGS.handle = handle;
+            NT_PROTECT_VIRTUAL_MEMORY_ARGS.base_address = base_address;
+            NT_PROTECT_VIRTUAL_MEMORY_ARGS.size = size;
+            NT_PROTECT_VIRTUAL_MEMORY_ARGS.protection = new_protection;
+            set_hardware_breakpoint(find_syscall_address(addr));
+
+            handle = HANDLE {0: -1};
+            base_address = ptr::null_mut();
+            size = std::mem::transmute(&(10usize));
+            new_protection = PAGE_READONLY;
+        }
+
         dynamic_invoke!(ntdll,&lc!("NtProtectVirtualMemory"),func_ptr,ret,handle,base_address,size,new_protection,old_protection);
 
         match ret {
@@ -836,6 +1000,45 @@ pub fn nt_protect_virtual_memory (handle: HANDLE, base_address: *mut PVOID, size
         }
     } 
 }
+
+/// Dynamically calls NtOpenProcess.
+///
+/// It will return the NTSTATUS value returned by the call.
+pub fn nt_open_process (mut handle: *mut HANDLE, mut access: u32, mut attributes: *mut OBJECT_ATTRIBUTES, mut client_id: *mut CLIENT_ID) -> i32 {
+    
+    unsafe 
+    {
+        let ret;
+        let func_ptr: data::NtOpenProcess;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+
+        if HARDWARE_EXCEPTION
+        {
+            let addr = get_function_address(ntdll, &lc!("NtOpenProcess")) as usize;
+            HARDWARE_EXCEPTION_FUNCTION =  ExceptionHandleFunction::NtOpenProcess;
+            NT_OPEN_PROCESS_ARGS.handle = handle;
+            NT_OPEN_PROCESS_ARGS.access = access;
+            NT_OPEN_PROCESS_ARGS.attributes = attributes;
+            NT_OPEN_PROCESS_ARGS.client_id = client_id;
+            set_hardware_breakpoint(find_syscall_address(addr));
+
+            let h = HANDLE {0: -1};
+            handle = std::mem::transmute(&h);
+            access = PROCESS_QUERY_LIMITED_INFORMATION; 
+            attributes = std::mem::transmute(&OBJECT_ATTRIBUTES::default());
+            let c = CLIENT_ID {unique_process: HANDLE {0: std::process::id() as isize}, unique_thread: HANDLE::default()};
+            client_id = std::mem::transmute(&c);
+        }
+
+        dynamic_invoke!(ntdll,&lc!("NtOpenProcess"),func_ptr,ret,handle,access,attributes,client_id);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    } 
+}
+
 
 /// Dynamically calls NtQueryInformationProcess.
 ///
@@ -875,6 +1078,9 @@ pub fn rtl_adjust_privilege(privilege: u32, enable: u8, current_thread: u8, enab
     } 
 }
 
+/// Dynamically calls RtlInitUnicodeString.
+///
+/// It will return the NTSTATUS value returned by the call.
 pub fn rtl_init_unicode_string (destination_string: *mut UNICODE_STRING, source_string: *const u16) -> () 
 {
     unsafe
@@ -886,6 +1092,9 @@ pub fn rtl_init_unicode_string (destination_string: *mut UNICODE_STRING, source_
     }
 }
 
+/// Dynamically calls RtlZeroMemory.
+///
+/// It will return the NTSTATUS value returned by the call.
 pub fn rtl_zero_memory (address: PVOID, length: usize) -> () 
 {
     unsafe
@@ -897,6 +1106,9 @@ pub fn rtl_zero_memory (address: PVOID, length: usize) -> ()
     }
 }
 
+/// Dynamically calls NtOpenFile.
+///
+/// It will return the NTSTATUS value returned by the call.
 pub fn nt_open_file (file_handle: *mut HANDLE, desired_access: u32, object_attributes: *mut OBJECT_ATTRIBUTES, 
                      io: *mut IO_STATUS_BLOCK, share_access: u32, options: u32) -> i32
 {
@@ -914,6 +1126,9 @@ pub fn nt_open_file (file_handle: *mut HANDLE, desired_access: u32, object_attri
     } 
 }
 
+/// Dynamically calls NtCreateSection.
+///
+/// It will return the NTSTATUS value returned by the call.
 pub fn nt_create_section (section_handle: *mut HANDLE, desired_access: u32, object_attributes: *mut OBJECT_ATTRIBUTES, 
                           size: *mut LARGE_INTEGER, page_protection: u32, allocation_attributes: u32, file_handle: HANDLE) -> i32
 {
@@ -932,6 +1147,9 @@ pub fn nt_create_section (section_handle: *mut HANDLE, desired_access: u32, obje
     }
 }
 
+/// Dynamically calls NtMapViewOfSection.
+///
+/// It will return the NTSTATUS value returned by the call.
 pub fn nt_map_view_of_section (section_handle: HANDLE, process_handle: HANDLE, base_address: *mut PVOID, zero: usize, commit_size: usize, 
                                offset: *mut LARGE_INTEGER, view_size: *mut usize, disposition: u32, allocation_type: u32, protection: u32) -> i32
 {
@@ -942,6 +1160,44 @@ pub fn nt_map_view_of_section (section_handle: HANDLE, process_handle: HANDLE, b
         let ntdll = get_module_base_address(&lc!("ntdll.dll"));
         dynamic_invoke!(ntdll,&lc!("NtMapViewOfSection"),func_ptr,ret,section_handle,process_handle,base_address,zero,commit_size,
                         offset,view_size,disposition,allocation_type,protection);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    }
+}
+
+/// Dynamically calls NtCreateThreadEx.
+///
+/// It will return the NTSTATUS value returned by the call.
+pub fn nt_create_thread_ex (mut thread: *mut HANDLE, mut access: u32, mut attributes: *mut OBJECT_ATTRIBUTES, mut process: HANDLE, function: PVOID, 
+    args: PVOID, flags: u32, zero: usize, stack: usize, reserve: usize, buffer: *mut PS_ATTRIBUTE_LIST) -> i32
+{
+    unsafe 
+    {
+        let ret: Option<i32>;
+        let func_ptr: data::NtCreateThreadEx;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+
+        if HARDWARE_EXCEPTION
+        {
+            let addr = get_function_address(ntdll, "NtCreateThreadEx") as usize;
+            HARDWARE_EXCEPTION_FUNCTION =  ExceptionHandleFunction::NtCreateThreadEx;
+            NT_CREATE_THREAD_EX_ARGS.thread = thread;
+            NT_CREATE_THREAD_EX_ARGS.access = access;
+            NT_CREATE_THREAD_EX_ARGS.attributes = attributes;
+            NT_CREATE_THREAD_EX_ARGS.process = process;
+            set_hardware_breakpoint(find_syscall_address(addr));
+
+            let h = HANDLE {0: -1};
+            thread = std::mem::transmute(&h);
+            access = PROCESS_QUERY_LIMITED_INFORMATION; 
+            attributes = std::mem::transmute(&OBJECT_ATTRIBUTES::default());
+            process = HANDLE {0: -1};
+        }
+
+        dynamic_invoke!(ntdll,&lc!("NtCreateThreadEx"),func_ptr,ret,thread,access,attributes,process,function,args,flags,zero,stack,reserve,buffer);
 
         match ret {
             Some(x) => return x,
