@@ -5,14 +5,12 @@ Rust port of [Dinvoke](https://github.com/TheWover/DInvoke). DInvoke_rs may be u
 Features:
 * Dynamically resolve and invoke undocumented Windows APIs from Rust.
 * Primitives allowing for strategic API hook evasion. 
-* Direct syscall execution from Rust.
+* Direct syscall execution from Rust (x64).
 * Manually map PE modules from disk or directly from memory.
 * PE headers parsing.
 * Map PE modules into sections backed by arbitrary modules on disk.
 * Module fluctuation to hide mapped PEs (concurrency supported).
-
-TODO:
-* PE headers manipulation.
+* Syscall parameters spoofing through exception handlers + hardware breakpoints (x64).
 
 # Credit
 All the credits go to the creators of the original C# implementation of this tool:
@@ -262,6 +260,35 @@ fn main() {
         // Since we dont want to use our ntdll copy for the moment, we hide it again. It can we remapped at any time.
         manager.hide(overload.1);
 
+    }
+}
+
+```
+
+# Example 7 - Syscall parameters spoofing
+In order to spoof the first 4 parameters of a syscall, DInvoke_rs has support for hardware breakpoints in combination with exception handlers. This allows to send not malicious parameters to a NT function, and after the EDR has inspected them, they are replaced by the original parameters before the syscall instruction is executed. For further information, check out the repository where the original idea comes from: [TamperingSyscalls](https://github.com/rad9800/TamperingSyscalls).
+
+For now, this feature is implemented for the functions NtOpenProcess, NtAllocateVirtualMemory, NtProtectVirtualMemory, NtWriteVirtualMemory and NtCreateThreadEx. In order to use it, it's just needed to activate the feature, set the exception handler and call the desired function through Dinvoke.
+
+```rust
+
+fn main() {
+    unsafe
+    {
+        dinvoke::use_hardware_breakpoints(true);
+        let handler= dinvoke::breakpoint_handler as usize;
+        dinvoke::set_unhandled_exception_filter(handler);
+
+        let h = HANDLE {0: -1};
+        let handle: *mut HANDLE = std::mem::transmute(&h);
+        let access = THREAD_ALL_ACCESS; 
+        let attributes: *mut OBJECT_ATTRIBUTES = std::mem::transmute(&OBJECT_ATTRIBUTES::default());
+        let remote_pid = 10952isize;
+        let c = CLIENT_ID {unique_process: HANDLE {0: remote_pid}, unique_thread: HANDLE::default()};
+        let client_id: *mut CLIENT_ID = std::mem::transmute(&c);
+        let ret = dinvoke::nt_open_process(handle, access, attributes, client_id);
+
+        println!("NTSTATUS: {:x}", ret);
     }
 }
 

@@ -11,13 +11,15 @@ use bindings::Windows::Win32::System::Kernel::UNICODE_STRING;
 use bindings::Windows::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
 use bindings::Windows::Win32::System::WindowsProgramming::{OBJECT_ATTRIBUTES, IO_STATUS_BLOCK};
 use bindings::Windows::Win32::{Foundation::{HANDLE, HINSTANCE, PSTR}, {System::Threading::{GetCurrentProcess,GetCurrentThread}}};
-use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, DLL_PROCESS_ATTACH, EAT, EntryPoint, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, PVOID, PeMetadata, CONTEXT, NtAllocateVirtualMemoryArgs, EXCEPTION_POINTERS, NtOpenProcessArgs, CLIENT_ID, PROCESS_QUERY_LIMITED_INFORMATION, NtProtectVirtualMemoryArgs, PAGE_READONLY, NtWriteVirtualMemoryArgs, ExceptionHandleFunction, PS_ATTRIBUTE_LIST, NtCreateThreadExArgs};
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, DLL_PROCESS_ATTACH, EAT, EntryPoint, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, 
+    PVOID, PeMetadata, CONTEXT, NtAllocateVirtualMemoryArgs, EXCEPTION_POINTERS, NtOpenProcessArgs, CLIENT_ID, PROCESS_QUERY_LIMITED_INFORMATION, NtProtectVirtualMemoryArgs,
+    PAGE_READONLY, NtWriteVirtualMemoryArgs, ExceptionHandleFunction, PS_ATTRIBUTE_LIST, NtCreateThreadExArgs, LptopLevelExceptionFilter};
 use libc::c_void;
 use litcrypt::lc;
 use winproc::Process;
 use winapi::shared::ntdef::LARGE_INTEGER;
 
-static mut HARDWARE_EXCEPTION: bool = false;
+static mut HARDWARE_BREAKPOINTS: bool = false;
 static mut HARDWARE_EXCEPTION_FUNCTION: ExceptionHandleFunction = ExceptionHandleFunction::NtOpenProcess;
 static mut NT_ALLOCATE_VIRTUAL_MEMORY_ARGS: NtAllocateVirtualMemoryArgs = NtAllocateVirtualMemoryArgs{handle: HANDLE {0: -1}, base_address: ptr::null_mut()};
 static mut NT_OPEN_PROCESS_ARGS: NtOpenProcessArgs = NtOpenProcessArgs{handle: ptr::null_mut(), access:0, attributes: ptr::null_mut(), client_id: ptr::null_mut()};
@@ -25,15 +27,26 @@ static mut NT_PROTECT_VIRTUAL_MEMORY_ARGS: NtProtectVirtualMemoryArgs = NtProtec
 static mut NT_WRITE_VIRTUAL_MEMORY_ARGS: NtWriteVirtualMemoryArgs = NtWriteVirtualMemoryArgs{handle: HANDLE {0: -1}, base_address: ptr::null_mut(), buffer: ptr::null_mut(), size: 0usize};
 static mut NT_CREATE_THREAD_EX_ARGS: NtCreateThreadExArgs = NtCreateThreadExArgs{thread:ptr::null_mut(), access: 0, attributes: ptr::null_mut(), process: HANDLE {0: -1}};
 
-
-pub fn use_hardware_exceptions(value: bool)
+/// Enables or disables the use of exception handlers in
+/// combination with hardware breakpoints.
+pub fn use_hardware_breakpoints(value: bool)
 {
     unsafe
     {
-        HARDWARE_EXCEPTION = value;
+        HARDWARE_BREAKPOINTS = value;
     }
 } 
 
+/// It sets a hardware breakpoint on a certain memory address.
+///
+/// # Examples
+///
+/// ```
+/// let ntdll = dinvoke::get_module_base_address("ntdll.dll");
+/// let nt_open_process = dinvoke::get_function_address(ntdll, "NtOpenProcess");
+/// let instruction_addr = dinvoke::find_syscall_address(nt_open_process);
+/// dinvoke::set_hardware_breakpoint(instruction_addr);
+/// ```
 pub fn set_hardware_breakpoint(address: usize) 
 {
     unsafe
@@ -53,10 +66,22 @@ pub fn set_hardware_breakpoint(address: usize)
         (*context).ContextFlags = 0x100000 | 0x10;
         lp_context = std::mem::transmute(context);
         
-        SetThreadContext( GetCurrentThread(), lp_context );
+        SetThreadContext(GetCurrentThread(), lp_context );
     }
 }
 
+/// Retrieves the memory address of a syscall instruction.
+///
+/// It expects the memory address of the function as a parameter, and 
+/// it will iterate over each following byte until it finds the value 0x0F05.
+///
+/// # Examples
+///
+/// ```
+/// let ntdll = dinvoke::get_module_base_address("ntdll.dll");
+/// let nt_open_process = dinvoke::get_function_address(ntdll, "NtOpenProcess");
+/// let syscall_addr = dinvoke::find_syscall_address(nt_open_process);
+/// ```
 pub fn find_syscall_address(address: usize) -> usize
 {
     unsafe
@@ -77,6 +102,10 @@ pub fn find_syscall_address(address: usize) -> usize
     0usize
 }
 
+/// This function acts as an Exception Handler, and should be combined with a hardware breakpoint.
+///
+/// Whenever the HB gets triggered, this function will be executed. This is meant to be used in order
+/// to spoof syscalls parameters.
 pub unsafe extern "system" fn breakpoint_handler (exceptioninfo: *mut EXCEPTION_POINTERS) -> i32
 {
     if (*(*(exceptioninfo)).exception_record).ExceptionCode.0 == 0x80000004 // STATUS_SINGLE_STEP
@@ -85,7 +114,7 @@ pub unsafe extern "system" fn breakpoint_handler (exceptioninfo: *mut EXCEPTION_
         {
             if (*(*exceptioninfo).context_record).Rip == (*(*exceptioninfo).context_record).Dr0
             {
-                (*(*exceptioninfo).context_record).Dr0 = 0;
+                (*(*exceptioninfo).context_record).Dr0 = 0; // Remove the breakpoint
                 match HARDWARE_EXCEPTION_FUNCTION
                 {
                     ExceptionHandleFunction::NtAllocateVirtualMemory =>
@@ -787,6 +816,23 @@ pub fn ldr_get_procedure_address (module_handle: i64, function_name: &str, ordin
     }
 }
 
+/// Dynamically calls SetUnhandledExceptionFilter.
+pub fn set_unhandled_exception_filter(address: usize) -> LptopLevelExceptionFilter
+{
+    unsafe 
+    {
+        let ret: Option<LptopLevelExceptionFilter>;
+        let func_ptr: data::SetUnhandledExceptionFilter;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("SetUnhandledExceptionFilter"),func_ptr,ret,address);
+
+        match ret {
+            Some(x) => return x,
+            None => return 0,
+        }
+    }
+}
+
 /// Loads and retrieves a module's base address by dynamically calling LoadLibraryA.
 ///
 /// It will return either the module's base address or an Err with a descriptive error message.
@@ -907,7 +953,7 @@ pub fn nt_write_virtual_memory (mut handle: HANDLE, base_address: PVOID, mut buf
         let func_ptr: data::NtWriteVirtualMemory;
         let ntdll = get_module_base_address(&lc!("ntdll.dll"));
 
-        if HARDWARE_EXCEPTION
+        if HARDWARE_BREAKPOINTS
         {
             let addr = get_function_address(ntdll, &lc!("NtWriteVirtualMemory")) as usize;
             HARDWARE_EXCEPTION_FUNCTION =  ExceptionHandleFunction::NtWriteVirtualMemory;
@@ -944,7 +990,7 @@ pub fn nt_allocate_virtual_memory (mut handle: HANDLE, mut base_address: *mut PV
         let func_ptr: data::NtAllocateVirtualMemory;
         let ntdll = get_module_base_address(&lc!("ntdll.dll"));
         
-        if HARDWARE_EXCEPTION
+        if HARDWARE_BREAKPOINTS
         {
             let addr = get_function_address(ntdll, &lc!("NtAllocateVirtualMemory")) as usize;
             HARDWARE_EXCEPTION_FUNCTION = ExceptionHandleFunction::NtAllocateVirtualMemory;
@@ -976,7 +1022,7 @@ pub fn nt_protect_virtual_memory (mut handle: HANDLE, mut base_address: *mut PVO
         let func_ptr: data::NtProtectVirtualMemory;
         let ntdll = get_module_base_address(&lc!("ntdll.dll"));
 
-        if HARDWARE_EXCEPTION
+        if HARDWARE_BREAKPOINTS
         {
             let addr = get_function_address(ntdll, &lc!("NtProtectVirtualMemory")) as usize;
             HARDWARE_EXCEPTION_FUNCTION =  ExceptionHandleFunction::NtProtectVirtualMemory;
@@ -1012,7 +1058,7 @@ pub fn nt_open_process (mut handle: *mut HANDLE, mut access: u32, mut attributes
         let func_ptr: data::NtOpenProcess;
         let ntdll = get_module_base_address(&lc!("ntdll.dll"));
 
-        if HARDWARE_EXCEPTION
+        if HARDWARE_BREAKPOINTS
         {
             let addr = get_function_address(ntdll, &lc!("NtOpenProcess")) as usize;
             HARDWARE_EXCEPTION_FUNCTION =  ExceptionHandleFunction::NtOpenProcess;
@@ -1180,7 +1226,7 @@ pub fn nt_create_thread_ex (mut thread: *mut HANDLE, mut access: u32, mut attrib
         let func_ptr: data::NtCreateThreadEx;
         let ntdll = get_module_base_address(&lc!("ntdll.dll"));
 
-        if HARDWARE_EXCEPTION
+        if HARDWARE_BREAKPOINTS
         {
             let addr = get_function_address(ntdll, "NtCreateThreadEx") as usize;
             HARDWARE_EXCEPTION_FUNCTION =  ExceptionHandleFunction::NtCreateThreadEx;
