@@ -275,17 +275,24 @@ For now, this feature is implemented for the functions NtOpenProcess, NtAllocate
 fn main() {
     unsafe
     {
+        // We active the use of hardware breakpoints to spoof syscall parameters
         dinvoke::use_hardware_breakpoints(true);
-        let handler= dinvoke::breakpoint_handler as usize;
+        // We get the memory address of our function and set it as the 
+        // top-level exception handler.
+        let handler = dinvoke::breakpoint_handler as usize;
         dinvoke::set_unhandled_exception_filter(handler);
 
         let h = HANDLE {0: -1};
         let handle: *mut HANDLE = std::mem::transmute(&h);
         let access = THREAD_ALL_ACCESS; 
         let attributes: *mut OBJECT_ATTRIBUTES = std::mem::transmute(&OBJECT_ATTRIBUTES::default());
+        // We set the PID of the remote process 
         let remote_pid = 10952isize;
         let c = CLIENT_ID {unique_process: HANDLE {0: remote_pid}, unique_thread: HANDLE::default()};
         let client_id: *mut CLIENT_ID = std::mem::transmute(&c);
+        // A call to NtOpenProcess is performed through Dinvoke. The parameters will be
+        // automatically spoofed by the function and restored to the original values
+        // before executing the syscall.
         let ret = dinvoke::nt_open_process(handle, access, attributes, client_id);
 
         println!("NTSTATUS: {:x}", ret);
