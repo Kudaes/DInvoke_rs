@@ -28,7 +28,7 @@ use litcrypt::lc;
 
 /// Manually maps a PE from disk to the memory of the current process.
 ///
-/// It will return either a pair (PeMetadata,i64) containing the mapped PE
+/// It will return either a pair (PeMetadata,isize) containing the mapped PE
 /// metadata and its base address or a String with a descriptive error message.
 ///
 /// # Examples
@@ -41,8 +41,8 @@ use litcrypt::lc;
 ///     Err(e) => println!("{}", e),      
 /// }
 /// ```
-pub fn read_and_map_module (filepath: &str) -> Result<(PeMetadata,i64), String> {
-
+pub fn read_and_map_module (filepath: &str) -> Result<(PeMetadata,isize), String> 
+{
     let file_content = fs::read(filepath).expect(&lc!("[x] Error opening the specified file."));
     let file_content_ptr = file_content.as_ptr();
     let result = manually_map_module(file_content_ptr)?;
@@ -52,7 +52,7 @@ pub fn read_and_map_module (filepath: &str) -> Result<(PeMetadata,i64), String> 
 
 /// Manually maps a PE into the current process.
 ///
-/// It will return either a pair (PeMetadata,i64) containing the mapped PE
+/// It will return either a pair (PeMetadata,isize) containing the mapped PE
 /// metadata and its base address or a String with a descriptive error message.
 ///
 /// # Examples
@@ -64,8 +64,8 @@ pub fn read_and_map_module (filepath: &str) -> Result<(PeMetadata,i64), String> 
 /// let file_content_ptr = file_content.as_ptr();
 /// let result = manualmap::manually_map_module(file_content_ptr);
 /// ```
-pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,i64), String> {
-
+pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,isize), String> 
+{
     let pe_info = get_pe_metadata(file_ptr)?;
     if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) 
     {
@@ -108,7 +108,9 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,i64), Str
 
         set_module_section_permissions(&pe_info, image_ptr)?;
 
-        Ok((pe_info,image_ptr as i64))
+        add_runtime_table(&pe_info, image_ptr);
+
+        Ok((pe_info,image_ptr as isize))
 
     }
 
@@ -128,8 +130,8 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,i64), Str
 /// let file_content_ptr = file_content.as_ptr();
 /// let result = manualmap::get_pe_metadata(file_content_ptr);
 /// ```
-pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String> {
-    
+pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String>
+{
     let mut pe_metadata= PeMetadata::default();
 
     unsafe {
@@ -183,8 +185,8 @@ pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String> {
 ///
 /// The parameters required are a vector with the module content, the base address where the module should be
 /// mapped and the module's metadata.
-pub fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_info: &PeMetadata) -> Result<(),String>{
-
+pub fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_info: &PeMetadata) -> Result<(),String>
+{
     if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) 
     {
         return Err(lc!("[x] The module architecture does not match the process architecture."));
@@ -242,22 +244,22 @@ pub fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_in
 ///
 /// The parameters required are the module's metadata information and a
 /// pointer to the base address where the module is mapped in memory.
-pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void) {
-
+pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void) 
+{
     unsafe {
 
         let module_memory_base: *mut u64 = std::mem::transmute(image_ptr);
         let image_data_directory;
-        let image_delta: i64;
+        let image_delta: isize;
         if pe_info.is_32_bit 
         {
             image_data_directory = pe_info.opt_header_32.DataDirectory[5]; // BaseRelocationTable
-            image_delta = module_memory_base as i64 - pe_info.opt_header_32.ImageBase as i64;
+            image_delta = module_memory_base as isize - pe_info.opt_header_32.ImageBase as isize;
         }
         else 
         {
             image_data_directory = pe_info.opt_header_64.datas_directory[5]; // BaseRelocationTable
-            image_delta = module_memory_base as i64 - pe_info.opt_header_64.image_base as i64;
+            image_delta = module_memory_base as isize - pe_info.opt_header_64.image_base as isize;
         }
 
         let mut reloc_table_ptr = (module_memory_base as u64 + image_data_directory.VirtualAddress as u64) as *mut i32;
@@ -267,7 +269,7 @@ pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void) {
         {
             let ibr: *mut IMAGE_BASE_RELOCATION = std::mem::transmute(reloc_table_ptr);
             let image_base_relocation = *ibr;
-            let reloc_count: i64 = (image_base_relocation.SizeOfBlock as i64 - size_of::<IMAGE_BASE_RELOCATION>() as i64) / 2;
+            let reloc_count: isize = (image_base_relocation.SizeOfBlock as isize - size_of::<IMAGE_BASE_RELOCATION>() as isize) / 2;
 
             for i in 0..reloc_count
             {
@@ -289,9 +291,9 @@ pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void) {
                     }
                     else 
                     {
-                        let patch_ptr = (module_memory_base as u64 + image_base_relocation.VirtualAddress as u64 + reloc_patch as u64) as *mut i64;
+                        let patch_ptr = (module_memory_base as u64 + image_base_relocation.VirtualAddress as u64 + reloc_patch as u64) as *mut isize;
                         let original_ptr = *patch_ptr;
-                        let patch = original_ptr + image_delta as i64;
+                        let patch = original_ptr + image_delta as isize;
                         *patch_ptr = patch;
                     }
                 }
@@ -310,8 +312,8 @@ pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void) {
 ///
 /// The parameters required are the module's metadata information and a
 /// pointer to the base address where the module is mapped in memory.
-pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Result<(),String> {
-
+pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Result<(),String> 
+{
     unsafe 
     {
         let module_memory_base: *mut u64 = std::mem::transmute(image_ptr);
@@ -394,7 +396,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
 
                 if pe_info.is_32_bit
                 {
-                    let mut i: i64 = 0;
+                    let mut i: isize = 0;
 
                     loop 
                     {
@@ -425,14 +427,14 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
                                 imp_by_name_ptr = imp_by_name_ptr.add(1);
                             }
 
-                            let func_ptr = dinvoke::get_function_address(module_handle as i64, &import_name);
+                            let func_ptr = dinvoke::get_function_address(module_handle as isize, &import_name);
                             *ft_itd = func_ptr as i32;
 
                         }
                         else 
                         {
                             let f_ordinal = (image_thunk_data.u1.AddressOfData & 0xFFFF) as u32;
-                            let func_ptr = dinvoke::get_function_address_by_ordinal(module_handle as i64, f_ordinal);
+                            let func_ptr = dinvoke::get_function_address_by_ordinal(module_handle as isize, f_ordinal);
                             let func_ptr = func_ptr as *mut i32;
                             *ft_itd = func_ptr as i32;
                         }
@@ -442,7 +444,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
                 }
                 else 
                 {
-                    let mut i: i64 = 0;
+                    let mut i: isize = 0;
 
                     loop 
                     {
@@ -450,7 +452,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
                             + i as u64 * size_of::<u64>() as u64) as *mut IMAGE_THUNK_DATA64;
                         let image_thunk_data = *image_thunk_data;
                         let ft_itd = (module_memory_base as u64 + image_import_descriptor.FirstThunk as u64 +
-                            i as u64 * size_of::<u64>() as u64) as *mut i64;
+                            i as u64 * size_of::<u64>() as u64) as *mut isize;
                         
 
                         if image_thunk_data.u1.AddressOfData == 0
@@ -475,15 +477,15 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
                                 imp_by_name_ptr = imp_by_name_ptr.add(1);
                             }
 
-                            let func_ptr = dinvoke::get_function_address(module_handle as i64, &import_name) as *mut i64;
-                            *ft_itd = func_ptr as i64;
+                            let func_ptr = dinvoke::get_function_address(module_handle as isize, &import_name) as *mut isize;
+                            *ft_itd = func_ptr as isize;
                         }
                         else 
                         {
      
                             let f_ordinal = (image_thunk_data.u1.AddressOfData & 0xFFFF) as u32;
-                            let func_ptr = dinvoke::get_function_address_by_ordinal(module_handle as i64, f_ordinal);
-                            *ft_itd = func_ptr as i64;
+                            let func_ptr = dinvoke::get_function_address_by_ordinal(module_handle as isize, f_ordinal);
+                            *ft_itd = func_ptr as isize;
                         }
 
                         i = i + 1;
@@ -502,12 +504,41 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
     }
 }
 
+pub fn add_runtime_table(pe_info: &PeMetadata, image_ptr: *mut c_void) 
+{
+    unsafe 
+    {
+        for section in &pe_info.sections
+        {   
+            let s = std::str::from_utf8(&section.Name).unwrap();
+            if s.contains(&lc!(".pdata"))
+            {
+                let base = image_ptr as isize;
+                let mut i = 0i32;
+                let mut runtime: *mut data::RUNTIME_FUNCTION = std::mem::transmute(base + section.VirtualAddress as isize);
+                while  (*runtime).begin_addr != 0 
+                {
+                    runtime = runtime.add(1);
+                    i +=1 ;
+                }
+
+                let func: data::RtlAddFunctionTable;
+                let _ret: Option<bool>;                
+                let k32 = dinvoke::get_module_base_address(&lc!("kernel32.dll"));
+                let function_table: usize = image_ptr as usize;
+                dinvoke::dynamic_invoke!(k32,&lc!("RtlAddFunctionTable"),func,_ret,function_table,i,base as isize);
+            }
+        }
+    }
+
+}
+
 /// Sets correct module section permissions for a manually mapped module.
 ///
 /// The parameters required are the module's metadata information and a
 /// pointer to the base address where the module is mapped in memory.
-pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Result<(),String> {
-
+pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Result<(),String> 
+{
     unsafe 
     {
         let base_of_code;
@@ -523,7 +554,7 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
 
         let handle = GetCurrentProcess();
         let base_address: *mut PVOID = std::mem::transmute(&image_ptr);
-        let size: *mut usize = std::mem::transmute(&i64::default());
+        let size: *mut usize = std::mem::transmute(&isize::default());
         *size = base_of_code;
         let old_protection: *mut u32 = std::mem::transmute(&u32::default());
         let _ret = dinvoke::nt_protect_virtual_memory(handle, base_address, size, PAGE_READONLY, old_protection);
@@ -663,7 +694,7 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap,HANDLE),String>
 
         let base_address: *const u8 = std::mem::transmute(*base_address);
         let sec_object: PeManualMap = PeManualMap { pe_info : get_pe_metadata(base_address).unwrap(),
-                                                    base_address : base_address as i64, decoy_module: module_path};
+                                                    base_address : base_address as isize, decoy_module: module_path};
         
 
         let _r = dinvoke::close_handle(*hfile);
@@ -672,8 +703,8 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap,HANDLE),String>
     }
 }
 
-pub fn map_to_allocated_memory (module_ptr: *const u8, image_ptr: *mut c_void, pe_info: &PeMetadata) -> Result<(), String> {
-
+pub fn map_to_allocated_memory (module_ptr: *const u8, image_ptr: *mut c_void, pe_info: &PeMetadata) -> Result<(), String> 
+{
     map_module_to_memory(module_ptr, image_ptr, &pe_info)?;
     
     relocate_module(&pe_info, image_ptr);
@@ -682,6 +713,7 @@ pub fn map_to_allocated_memory (module_ptr: *const u8, image_ptr: *mut c_void, p
 
     set_module_section_permissions(&pe_info, image_ptr)?;
 
-    Ok(())  
+    add_runtime_table(&pe_info, image_ptr);
 
+    Ok(())  
 }

@@ -159,7 +159,7 @@ pub unsafe extern "system" fn breakpoint_handler (exceptioninfo: *mut EXCEPTION_
         }
         return -1; // EXCEPTION_CONTINUE_EXECUTION
     }
-    0 // EXCEPTION_CONTINUE_EXECUTION
+    0 // EXCEPTION_CONTINUE_SEARCH
 }
 
 /// Retrieves the base address of a module loaded in the current process.
@@ -177,7 +177,7 @@ pub unsafe extern "system" fn breakpoint_handler (exceptioninfo: *mut EXCEPTION_
 ///     println!("The base address of ntdll.dll is 0x{:X}.", ntdll);
 /// }
 /// ```
-pub fn get_module_base_address (module_name: &str) -> i64
+pub fn get_module_base_address (module_name: &str) -> isize
 {
     let process = Process::current();
     let modules = process.module_list().unwrap();
@@ -186,7 +186,7 @@ pub fn get_module_base_address (module_name: &str) -> i64
         if m.name().unwrap().to_lowercase() == module_name.to_ascii_lowercase()
         {
             let handle = m.handle();
-            return handle as i64;
+            return handle as isize;
         }
     }
 
@@ -212,16 +212,16 @@ pub fn get_module_base_address (module_name: &str) -> i64
 ///     println!("The address where NtCreateThread is located at is 0x{:X}.", addr);
 /// }
 /// ```
-pub fn get_function_address(module_base_address: i64, function: &str) -> i64 {
+pub fn get_function_address(module_base_address: isize, function: &str) -> isize {
 
     unsafe
     {
         
         let mut function_ptr:*mut i32 = ptr::null_mut();
         let pe_header = *((module_base_address + 0x3C) as *mut i32);
-        let opt_header: i64 = module_base_address + (pe_header as i64) + 0x18;
+        let opt_header: isize = module_base_address + (pe_header as isize) + 0x18;
         let magic = *(opt_header as *mut i16);
-        let p_export: i64;
+        let p_export: isize;
 
         if magic == 0x010b 
         {
@@ -233,17 +233,17 @@ pub fn get_function_address(module_base_address: i64, function: &str) -> i64 {
         }
 
         let export_rva = *(p_export as *mut i32);
-        let ordinal_base = *((module_base_address + export_rva as i64 + 0x10) as *mut i32);
-        let number_of_names = *((module_base_address + export_rva as i64 + 0x18) as *mut i32);
-        let functions_rva = *((module_base_address + export_rva as i64 + 0x1C) as *mut i32);
-        let names_rva = *((module_base_address + export_rva as i64 + 0x20) as *mut i32);
-        let ordinals_rva = *((module_base_address + export_rva as i64 + 0x24) as *mut i32);
+        let ordinal_base = *((module_base_address + export_rva as isize + 0x10) as *mut i32);
+        let number_of_names = *((module_base_address + export_rva as isize + 0x18) as *mut i32);
+        let functions_rva = *((module_base_address + export_rva as isize + 0x1C) as *mut i32);
+        let names_rva = *((module_base_address + export_rva as isize + 0x20) as *mut i32);
+        let ordinals_rva = *((module_base_address + export_rva as isize + 0x24) as *mut i32);
 
         for x in 0..number_of_names 
         {
 
-            let address = *((module_base_address + names_rva as i64 + x as i64 * 4) as *mut i32);
-            let mut function_name_ptr = (module_base_address + address as i64) as *mut u8;
+            let address = *((module_base_address + names_rva as isize + x as isize * 4) as *mut i32);
+            let mut function_name_ptr = (module_base_address + address as isize) as *mut u8;
             let mut function_name: String = "".to_string();
 
             while *function_name_ptr as char != '\0' // null byte
@@ -254,9 +254,9 @@ pub fn get_function_address(module_base_address: i64, function: &str) -> i64 {
 
             if function_name.to_lowercase() == function.to_lowercase() 
             {
-                let function_ordinal = *((module_base_address + ordinals_rva as i64 + x as i64 * 2) as *mut i16) as i32 + ordinal_base;
-                let function_rva = *(((module_base_address + functions_rva as i64 + (4 * (function_ordinal - ordinal_base)) as i64 )) as *mut i32);
-                function_ptr = (module_base_address + function_rva as i64) as *mut i32;
+                let function_ordinal = *((module_base_address + ordinals_rva as isize + x as isize * 2) as *mut i16) as i32 + ordinal_base;
+                let function_rva = *(((module_base_address + functions_rva as isize + (4 * (function_ordinal - ordinal_base)) as isize )) as *mut i32);
+                function_ptr = (module_base_address + function_rva as isize) as *mut i32;
 
                 function_ptr = get_forward_address(function_ptr as *mut u8) as *mut i32;
                 
@@ -265,11 +265,11 @@ pub fn get_function_address(module_base_address: i64, function: &str) -> i64 {
 
         }
 
-        let mut ret: i64 = 0;
+        let mut ret: isize = 0;
 
         if function_ptr != ptr::null_mut()
         {
-            ret = function_ptr as i64;
+            ret = function_ptr as isize;
         }
     
         ret
@@ -277,7 +277,7 @@ pub fn get_function_address(module_base_address: i64, function: &str) -> i64 {
     }
 }
 
-fn get_forward_address(function_ptr: *mut u8) -> i64 {
+fn get_forward_address(function_ptr: *mut u8) -> isize {
    
     unsafe 
     {
@@ -302,7 +302,7 @@ fn get_forward_address(function_ptr: *mut u8) -> i64 {
             // Assume there wont be an exported address with len > 100
             if c == 0
             {
-                return function_ptr as i64;
+                return function_ptr as isize;
             }
 
         }
@@ -310,7 +310,7 @@ fn get_forward_address(function_ptr: *mut u8) -> i64 {
         let values: Vec<&str> = forwarded_names.split(".").collect();
         if values.len() != 2
         {
-            return function_ptr as i64;
+            return function_ptr as isize;
         }
 
         let mut forwarded_module_name = values[0].to_string();
@@ -327,7 +327,7 @@ fn get_forward_address(function_ptr: *mut u8) -> i64 {
 
         if result.is_err()
         {
-            return function_ptr as i64;
+            return function_ptr as isize;
         }
 
         let lookup_key = format!("{}{}",&forwarded_module_name[..forwarded_module_name.len() - 2], ".dll");
@@ -357,7 +357,7 @@ fn get_forward_address(function_ptr: *mut u8) -> i64 {
             return get_function_address(module, &forwarded_export_name);
         }
 
-        function_ptr as i64
+        function_ptr as isize
     }
 }
 
@@ -378,7 +378,7 @@ pub fn get_api_mapping() -> HashMap<String,String> {
 
         let process_information_ptr: *mut PROCESS_BASIC_INFORMATION = std::mem::transmute(process_information);
 
-        let api_set_map_offset:u64;
+        let api_set_map_offset:usize;
 
         if size_of::<usize>() == 4
         {
@@ -391,17 +391,17 @@ pub fn get_api_mapping() -> HashMap<String,String> {
 
         let mut api_set_dict: HashMap<String,String> = HashMap::new();
 
-        let api_set_namespace_ptr = *(((*process_information_ptr).PebBaseAddress as u64 + api_set_map_offset) as *mut isize);
+        let api_set_namespace_ptr = *(((*process_information_ptr).PebBaseAddress as usize + api_set_map_offset) as *mut isize);
         let api_set_namespace_ptr: *mut ApiSetNamespace = std::mem::transmute(api_set_namespace_ptr);
         let namespace = *api_set_namespace_ptr; 
 
         for i in 0..namespace.count
         {
 
-            let set_entry_ptr = (api_set_namespace_ptr as u64 + namespace.entry_offset as u64 + (i * size_of::<ApiSetNamespaceEntry>() as i32) as u64) as *mut ApiSetNamespaceEntry;
+            let set_entry_ptr = (api_set_namespace_ptr as usize + namespace.entry_offset as usize + (i * size_of::<ApiSetNamespaceEntry>() as i32) as usize) as *mut ApiSetNamespaceEntry;
             let set_entry = *set_entry_ptr;
 
-            let mut api_set_entry_name_ptr = (api_set_namespace_ptr as u64 + set_entry.name_offset as u64) as *mut u8;
+            let mut api_set_entry_name_ptr = (api_set_namespace_ptr as usize + set_entry.name_offset as usize) as *mut u8;
             let mut api_set_entry_name: String = "".to_string();
             let mut j = 0;
             while j < (set_entry.name_length / 2 )
@@ -422,14 +422,14 @@ pub fn get_api_mapping() -> HashMap<String,String> {
 
             if set_entry.value_length == 1
             {
-                let value = (api_set_namespace_ptr as u64 + set_entry.value_offset as u64) as *mut u8;
+                let value = (api_set_namespace_ptr as usize + set_entry.value_offset as usize) as *mut u8;
                 set_value_ptr = std::mem::transmute(value);
             }
             else if set_entry.value_length > 1
             {
                 for x in 0..set_entry.value_length 
                 {
-                    let host_ptr = (api_set_entry_name_ptr as u64 + set_entry.value_offset as u64 + size_of::<ApiSetValueEntry>() as u64 * x as u64) as *mut u8;
+                    let host_ptr = (api_set_entry_name_ptr as usize + set_entry.value_offset as usize + size_of::<ApiSetValueEntry>() as usize * x as usize) as *mut u8;
                     let mut c: u8 = u8::default();
                     let mut host: String = "".to_string();
                     while c as char != '\0'
@@ -443,13 +443,13 @@ pub fn get_api_mapping() -> HashMap<String,String> {
 
                     if host != api_set_entry_name
                     {
-                        set_value_ptr = (api_set_namespace_ptr as u64 + set_entry.value_offset as u64 + size_of::<ApiSetValueEntry>() as u64 * x as u64) as *mut ApiSetValueEntry;
+                        set_value_ptr = (api_set_namespace_ptr as usize + set_entry.value_offset as usize + size_of::<ApiSetValueEntry>() as usize * x as usize) as *mut ApiSetValueEntry;
                     }
                 }
 
                 if set_value_ptr == ptr::null_mut()
                 {
-                    set_value_ptr = (api_set_namespace_ptr as u64 + set_entry.value_offset as u64) as *mut ApiSetValueEntry;
+                    set_value_ptr = (api_set_namespace_ptr as usize + set_entry.value_offset as usize) as *mut ApiSetValueEntry;
                 }
             }
 
@@ -457,7 +457,7 @@ pub fn get_api_mapping() -> HashMap<String,String> {
             let mut api_set_value: String = "".to_string();
             if set_value.value_count != 0
             {
-                let mut value_ptr = (api_set_namespace_ptr as u64 + set_value.value_offset as u64) as *mut u8;
+                let mut value_ptr = (api_set_namespace_ptr as usize + set_value.value_offset as usize) as *mut u8;
                 let mut r = 0;
                 while r < (set_value.value_count / 2 )
                 {
@@ -482,7 +482,7 @@ pub fn get_api_mapping() -> HashMap<String,String> {
     }
 }
 
-/// Returns a BTreeMap<i64,String> composed of pairs (memory address, function name)
+/// Returns a BTreeMap<isize,String> composed of pairs (memory address, function name)
 /// with all the Nt exported functions on ntdll.dll. 
 ///
 /// This functions will only return valid data if the parameter passed is the base address of
@@ -509,7 +509,7 @@ pub fn get_api_mapping() -> HashMap<String,String> {
 ///     }
 /// }
 /// ```
-pub fn get_ntdll_eat(module_base_address: i64) -> EAT {
+pub fn get_ntdll_eat(module_base_address: isize) -> EAT {
 
     unsafe
     {
@@ -517,9 +517,9 @@ pub fn get_ntdll_eat(module_base_address: i64) -> EAT {
 
         let mut function_ptr:*mut i32;
         let pe_header = *((module_base_address + 0x3C) as *mut i32);
-        let opt_header: i64 = module_base_address + (pe_header as i64) + 0x18;
+        let opt_header: isize = module_base_address + (pe_header as isize) + 0x18;
         let magic = *(opt_header as *mut i16);
-        let p_export: i64;
+        let p_export: isize;
 
         if magic == 0x010b 
         {
@@ -531,17 +531,17 @@ pub fn get_ntdll_eat(module_base_address: i64) -> EAT {
         }
 
         let export_rva = *(p_export as *mut i32);
-        let ordinal_base = *((module_base_address + export_rva as i64 + 0x10) as *mut i32);
-        let number_of_names = *((module_base_address + export_rva as i64 + 0x18) as *mut i32);
-        let functions_rva = *((module_base_address + export_rva as i64 + 0x1C) as *mut i32);
-        let names_rva = *((module_base_address + export_rva as i64 + 0x20) as *mut i32);
-        let ordinals_rva = *((module_base_address + export_rva as i64 + 0x24) as *mut i32);
+        let ordinal_base = *((module_base_address + export_rva as isize + 0x10) as *mut i32);
+        let number_of_names = *((module_base_address + export_rva as isize + 0x18) as *mut i32);
+        let functions_rva = *((module_base_address + export_rva as isize + 0x1C) as *mut i32);
+        let names_rva = *((module_base_address + export_rva as isize + 0x20) as *mut i32);
+        let ordinals_rva = *((module_base_address + export_rva as isize + 0x24) as *mut i32);
 
         for x in 0..number_of_names 
         {
 
-            let address = *((module_base_address + names_rva as i64 + x as i64 * 4) as *mut i32);
-            let mut function_name_ptr = (module_base_address + address as i64) as *mut u8;
+            let address = *((module_base_address + names_rva as isize + x as isize * 4) as *mut i32);
+            let mut function_name_ptr = (module_base_address + address as isize) as *mut u8;
             let mut function_name: String = "".to_string();
 
             while *function_name_ptr as char != '\0' // null byte
@@ -552,12 +552,12 @@ pub fn get_ntdll_eat(module_base_address: i64) -> EAT {
 
             if function_name.starts_with("Zw")
             {
-                let function_ordinal = *((module_base_address + ordinals_rva as i64 + x as i64 * 2) as *mut i16) as i32 + ordinal_base;
-                let function_rva = *(((module_base_address + functions_rva as i64 + (4 * (function_ordinal - ordinal_base)) as i64 )) as *mut i32);
-                function_ptr = (module_base_address + function_rva as i64) as *mut i32;
+                let function_ordinal = *((module_base_address + ordinals_rva as isize + x as isize * 2) as *mut i16) as i32 + ordinal_base;
+                let function_rva = *(((module_base_address + functions_rva as isize + (4 * (function_ordinal - ordinal_base)) as isize )) as *mut i32);
+                function_ptr = (module_base_address + function_rva as isize) as *mut i32;
 
                 function_name = function_name.replace("Zw", "Nt");
-                eat.insert(function_ptr as i64,function_name );
+                eat.insert(function_ptr as isize,function_name );
             }
 
         }
@@ -627,7 +627,7 @@ pub fn get_syscall_id(eat:EAT, function_name: &str) -> i32 {
 ///     }
 /// }
 /// ```
-pub fn prepare_syscall(id: u32) -> i64 {
+pub fn prepare_syscall(id: u32) -> isize {
 
     let mut sh: [u8;11] = 
     [ 
@@ -648,7 +648,7 @@ pub fn prepare_syscall(id: u32) -> i64 {
         }
 
         let handle = GetCurrentProcess();
-        let base_address: *mut PVOID = std::mem::transmute(&u64::default());
+        let base_address: *mut PVOID = std::mem::transmute(&usize::default());
         let nsize: usize = sh.len() as usize;
         let size: *mut usize = std::mem::transmute(&(nsize+1));
         let old_protection: *mut u32 = std::mem::transmute(&u32::default());
@@ -677,7 +677,7 @@ pub fn prepare_syscall(id: u32) -> i64 {
             return 0;
         }
 
-        *base_address as i64
+        *base_address as isize
     }
 
 
@@ -697,16 +697,16 @@ pub fn prepare_syscall(id: u32) -> i64 {
 ///         Err(e) => println!("Error ocurred: {}", e)
 ///    }
 /// ```
-pub fn call_module_entry_point(pe_info: PeMetadata, module_base_address: i64) -> Result<(), String> {
+pub fn call_module_entry_point(pe_info: PeMetadata, module_base_address: isize) -> Result<(), String> {
 
     let entry_point;
     if pe_info.is_32_bit 
     {
-        entry_point = module_base_address + pe_info.opt_header_32.AddressOfEntryPoint as i64;
+        entry_point = module_base_address + pe_info.opt_header_32.AddressOfEntryPoint as isize;
     }
     else 
     {
-        entry_point = module_base_address + pe_info.opt_header_64.address_of_entry_point as i64;
+        entry_point = module_base_address + pe_info.opt_header_64.address_of_entry_point as isize;
 
     }
 
@@ -746,7 +746,7 @@ pub fn call_module_entry_point(pe_info: PeMetadata, module_base_address: i64) ->
 ///     }
 /// }
 /// ```
-pub fn get_function_address_by_ordinal(module_base_address: i64, ordinal: u32) -> i64 {
+pub fn get_function_address_by_ordinal(module_base_address: isize, ordinal: u32) -> isize {
 
     let ret = ldr_get_procedure_address(module_base_address, "", ordinal);
 
@@ -775,15 +775,14 @@ pub fn get_function_address_by_ordinal(module_base_address: i64, ordinal: u32) -
 ///     }
 /// }
 /// ```
-pub fn ldr_get_procedure_address (module_handle: i64, function_name: &str, ordinal: u32) -> i64 {
+pub fn ldr_get_procedure_address (module_handle: isize, function_name: &str, ordinal: u32) -> isize {
 
     unsafe 
     {   
-
         let ret: Option<i32>;
         let func_ptr: data::LdrGetProcedureAddress;
         let hmodule: PVOID = std::mem::transmute(module_handle);
-        let return_address: *mut c_void = std::mem::transmute(&u64::default());
+        let return_address: *mut c_void = std::mem::transmute(&usize::default());
         let return_address: *mut PVOID = std::mem::transmute(return_address);
         let mut fun_name: *mut String = std::mem::transmute(&String::default());
 
@@ -804,7 +803,7 @@ pub fn ldr_get_procedure_address (module_handle: i64, function_name: &str, ordin
             {
                 if x == 0
                 {
-                    return *return_address as i64;
+                    return *return_address as isize;
                 } 
                 else 
                 {
@@ -844,7 +843,7 @@ pub fn set_unhandled_exception_filter(address: usize) -> LptopLevelExceptionFilt
 ///
 /// if ret != 0 {println!("ntdll.dll base address is 0x{:X}.", addr);
 /// ```
-pub fn load_library_a(module: &str) -> i64 {
+pub fn load_library_a(module: &str) -> isize {
 
     unsafe 
     {     
@@ -856,7 +855,7 @@ pub fn load_library_a(module: &str) -> i64 {
         dynamic_invoke!(module_base_address,&lc!("LoadLibraryA"),func_ptr,ret,function_name);
 
         match ret {
-            Some(x) => return x.0 as i64,
+            Some(x) => return x.0 as isize,
             None => return 0,
         }
 
@@ -883,7 +882,6 @@ pub fn open_process(desired_access: u32, inherit_handle: i32, process_id: u32) -
 
     unsafe 
     {    
-
         let ret: Option<HANDLE>;
         let func_ptr: data::OpenProcess;
         let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
@@ -1268,7 +1266,7 @@ pub fn nt_create_thread_ex (mut thread: *mut HANDLE, mut access: u32, mut attrib
 /// ```ignore
 /// let a = manualmap::read_and_map_module("c:\\some\\random\\file.dll").unwrap();
 /// let ret: bool = false;
-/// dinvoke::dynamic_invoke(&a.0, a.1, ret); // dinvoke::dynamic_invoke(&PeMetadata, i64, bool)
+/// dinvoke::dynamic_invoke(&a.0, a.1, ret); // dinvoke::dynamic_invoke(&PeMetadata, isize, bool)
 /// if ret { println!("Entry point successfully called.");}
 /// ```
 /// # Example - Dynamically calling LoadLibraryA
@@ -1279,7 +1277,7 @@ pub fn nt_create_thread_ex (mut thread: *mut HANDLE, mut access: u32, mut attrib
 /// let function_ptr: data::LoadLibraryA;
 /// let name = CString::new("ntdll.dll").expect("CString::new failed");
 /// let module_name = PSTR{0: name.as_ptr() as *mut u8};
-/// //dinvoke::dynamic_invoke(i64,&str,<function_type>,Option<return_type>,[arguments])
+/// //dinvoke::dynamic_invoke(isize,&str,<function_type>,Option<return_type>,[arguments])
 /// dinvoke::dynamic_invoke(a.1, "LoadLibraryA", function_ptr, ret, module_name);
 ///
 /// match ret {
@@ -1296,13 +1294,13 @@ pub fn nt_create_thread_ex (mut thread: *mut HANDLE, mut access: u32, mut attrib
 /// let hmodule: PVOID = std::mem::transmute(ptr);
 /// let fun_name: *mut String = ptr::null_mut();
 /// let ordinal = 8 as u32;
-/// let return_address: *mut c_void = std::mem::transmute(&u64::default());
+/// let return_address: *mut c_void = std::mem::transmute(&usize::default());
 /// let return_address: *mut PVOID = std::mem::transmute(return_address);
-/// //dinvoke::dynamic_invoke(i64,&str,<function_type>,Option<return_type>,[arguments])
+/// //dinvoke::dynamic_invoke(isize,&str,<function_type>,Option<return_type>,[arguments])
 /// dinvoke::dynamic_invoke!(ptr,"LdrGetProcedureAddress",function_ptr,ret,hmodule,fun_name,ordinal,return_address);
 ///
 /// match ret {
-///     Some(x) => if x == 0 {println!("RtlDispatchAPC is located at the address: 0x{:X}",*return_address as u64);},
+///     Some(x) => if x == 0 {println!("RtlDispatchAPC is located at the address: 0x{:X}",*return_address as usize);},
 ///     None => println!("Error calling LdrGetProcedureAddress"),
 /// }
 /// ```
@@ -1361,7 +1359,7 @@ macro_rules! dynamic_invoke {
 ///     return_length
 /// );
 /// match ret {
-///     Some(x) => if x == 0 {println!("Process information struct available at address 0x{:X}",process_information as u64);},
+///     Some(x) => if x == 0 {println!("Process information struct available at address 0x{:X}",process_information as usize);},
 ///     None => println!("Error executing direct syscall for NtQueryInformationProcess."),
 /// }
 /// ```
@@ -1389,6 +1387,5 @@ macro_rules! execute_syscall {
         {
             $c = None;
         }
-
     }
 }

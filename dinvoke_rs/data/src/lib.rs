@@ -4,8 +4,9 @@ use winapi::shared::ntdef::LARGE_INTEGER;
 
 pub type PVOID = *mut c_void;
 pub type DWORD = u32;
-pub type EAT = BTreeMap<i64,String>;
-pub type EntryPoint =  extern "system" fn (HINSTANCE, u32, *mut c_void) -> BOOL;
+pub type EAT = BTreeMap<isize,String>;
+pub type EntryPoint = extern "system" fn (HINSTANCE, u32, *mut c_void) -> BOOL;
+pub type RtlAddFunctionTable = unsafe extern "system" fn (usize, i32, isize) -> bool;
 pub type LoadLibraryA = unsafe extern "system" fn (PSTR) -> HINSTANCE;
 pub type OpenProcess = unsafe extern "system" fn (u32, i32, u32) -> HANDLE;
 pub type QueryFullProcessImageNameW = unsafe extern "system" fn (HANDLE, u32, *mut u16, *mut u32) -> i32;
@@ -118,7 +119,7 @@ impl Default for PeMetadata {
 #[repr(C)]
 pub struct PeManualMap {
     pub decoy_module: String,
-    pub base_address: i64,
+    pub base_address: isize,
     pub pe_info: PeMetadata,
 }
 
@@ -403,3 +404,23 @@ pub enum ExceptionHandleFunction
     NtProtectVirtualMemory,
     NtCreateThreadEx
 }
+
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+pub struct RUNTIME_FUNCTION {
+    pub begin_addr: u32,
+    pub end_addr: u32,
+    pub unwind_addr: u32
+}
+
+/*#[derive(Copy, Clone, Default)]
+pub struct UNWIND_INFO {
+    pub version_flags: u8,
+    pub prolog_size: u8,
+    pub count_codes: u8,
+    pub register_and_offset: u8, 
+    pub unwind_codes_1: u8, 
+    pub unwind_codes_2: u8,
+    pub exception_handler: u32,
+    pub unused: u16
+}*/
