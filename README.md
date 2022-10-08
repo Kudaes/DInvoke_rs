@@ -5,12 +5,12 @@ Rust port of [Dinvoke](https://github.com/TheWover/DInvoke). DInvoke_rs may be u
 Features:
 * Dynamically resolve and invoke undocumented Windows APIs from Rust.
 * Primitives allowing for strategic API hook evasion. 
-* Direct syscall execution from Rust (x64).
+* Indirect syscalls. **x64 only**
 * Manually map PE modules from disk or directly from memory.
 * PE headers parsing.
-* Map PE modules into sections backed by arbitrary modules on disk.
-* Module fluctuation to hide mapped PEs (concurrency supported).
-* Syscall parameters spoofing through exception handlers + hardware breakpoints (x64).
+* Map PE modules into sections backed by arbitrary modules on disk. **Not Opsec**
+* Module fluctuation to hide mapped PEs (concurrency supported). **Not Opsec**
+* Syscall parameters spoofing through exception filter + hardware breakpoints. **x64 only**
 
 # Credit
 All the credits go to the creators of the original C# implementation of this tool:
@@ -24,11 +24,12 @@ I just created this port as a way to learn Rust myself and with the idea of faci
 
 Since we are using [LITCRYPT](https://github.com/anvie/litcrypt.rs) plugin to obfuscate string literals, it is required to set up the environment variable LITCRYPT_ENCRYPT_KEY before compiling the code:
 
-	set LITCRYPT_ENCRYPT_KEY="yoursupersecretkey"
+	C:\Users\User\Desktop\DInvoke.rs\dinvoke_rs> set LITCRYPT_ENCRYPT_KEY="yoursupersecretkey"
 
-After that, you can open the project using your favorite IDE.
+After that, you can open the project using your favorite IDE and start implementing your own code using all the functionalities offered by DInvoke_rs.
     
-    code .
+    C:\Users\User\Desktop\DInvoke.rs\dinvoke_rs> code .
+
 # Example 1 - Resolving Exported Unmanaged APIs
 
 The example below demonstrates how to use DInvoke_rs to dynamically find and call exports of a DLL.
@@ -101,8 +102,8 @@ fn main() {
 
 ```
 
-# Example 3 - Executing direct syscall
-In the next example, we use DInvoke_rs to execute the syscall that corresponds to function NtQueryInformationProcess. Since the macro dinvoke::execute_syscall!() dynamically allocates and executes the shellcode required to perform the desired syscall, all hooks present in ntdll.dll are bypassed.
+# Example 3 - Executing indirect syscall
+In the next example, we use DInvoke_rs to execute the syscall that corresponds to the function NtQueryInformationProcess. Since the macro dinvoke::execute_syscall!() dynamically allocates and executes the shellcode required to perform the desired syscall, all hooks present in ntdll.dll are bypassed. The memory allocated is release once the syscall returns, avoiding the permanent presence of memory pages with execution permission.
 
 ```rust
 

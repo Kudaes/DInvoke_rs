@@ -19,6 +19,7 @@ pub type CreateFileTransactedA = unsafe extern "system" fn (*mut u8, u32, u32, *
     HANDLE, *const u32, PVOID) -> HANDLE;
 pub type GetLastError = unsafe extern "system" fn () -> u32;
 pub type CloseHandle = unsafe extern "system" fn (HANDLE) -> i32;
+pub type VirtualFree = unsafe extern "system" fn (PVOID, usize, u32) -> bool;
 pub type LptopLevelExceptionFilter = usize;
 pub type SetUnhandledExceptionFilter = unsafe extern "system" fn (filter: LptopLevelExceptionFilter) -> LptopLevelExceptionFilter;
 pub type LdrGetProcedureAddress = unsafe extern "system" fn (PVOID, *mut String, u32, *mut PVOID) -> i32;

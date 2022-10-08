@@ -18,6 +18,7 @@ use libc::c_void;
 use litcrypt::lc;
 use winproc::Process;
 use winapi::shared::ntdef::LARGE_INTEGER;
+use rand::Rng;
 
 static mut HARDWARE_BREAKPOINTS: bool = false;
 static mut HARDWARE_EXCEPTION_FUNCTION: ExceptionHandleFunction = ExceptionHandleFunction::NtOpenProcess;
@@ -588,7 +589,7 @@ pub fn get_ntdll_eat(module_base_address: isize) -> EAT {
 ///     }
 /// }
 /// ```
-pub fn get_syscall_id(eat:EAT, function_name: &str) -> i32 {
+pub fn get_syscall_id(eat: &EAT, function_name: &str) -> i32 {
 
     let mut i = 0;
     for (_a,b) in eat.iter()
@@ -627,14 +628,14 @@ pub fn get_syscall_id(eat:EAT, function_name: &str) -> i32 {
 ///     }
 /// }
 /// ```
-pub fn prepare_syscall(id: u32) -> isize {
+pub fn prepare_syscall(id: u32, eat: EAT) -> isize {
 
-    let mut sh: [u8;11] = 
+    let mut sh: [u8;21] = 
     [ 
         0x4C, 0x8B, 0xD1,
         0xB8, 0x00, 0x00, 0x00, 0x00,
-        0x0F, 0x05,
-        0xC3
+        0x49, 0xBB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x41, 0xFF, 0xE3
     ];
 
     unsafe 
@@ -645,6 +646,35 @@ pub fn prepare_syscall(id: u32) -> isize {
         {
             sh[4 + i] = *ptr;
             ptr = ptr.add(1);
+        }
+
+        let max_range = eat.len();
+        let mut rng = rand::thread_rng();
+        let mut function = &"".to_string();
+        for s in eat.values()
+        {
+            let index = rng.gen_range(0..max_range);
+            if index < max_range / 10
+            {
+                function = s;
+            }
+        }
+
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        let mut function_addr = get_function_address(ntdll, function);
+
+        if function_addr == 0
+        {
+            function_addr = get_function_address_by_ordinal(ntdll, id);
+        }
+
+        let syscall_addr = find_syscall_address(function_addr as usize);
+        let mut syscall_ptr: *mut u8 = std::mem::transmute(&syscall_addr);
+
+        for j in 0..8
+        {
+            sh[10 + j] = *syscall_ptr;
+            syscall_ptr = syscall_ptr.add(1);
         }
 
         let handle = GetCurrentProcess();
@@ -934,6 +964,25 @@ pub fn close_handle(handle: HANDLE) -> bool {
                 {
                     return true;
                 }
+            },
+            None => return false,
+        }
+    }
+}
+
+/// Dynamically calls VirtualFree.
+pub fn virtual_free(address: PVOID, size: usize, free_type: u32) -> bool {
+    unsafe 
+    {
+        let ret: Option<bool>;
+        let func_ptr: data::VirtualFree;
+        let ntdll = get_module_base_address(&lc!("kernel32.dll"));
+        dynamic_invoke!(ntdll,&lc!("VirtualFree"),func_ptr,ret,address,size,free_type);
+
+        match ret {
+            Some(x) =>
+            {
+                return x;
             },
             None => return false,
         }
@@ -1334,13 +1383,13 @@ macro_rules! dynamic_invoke {
     };
 }
 
-/// Dynamically execute a direct syscall.
+/// Dynamically execute an indirect syscall.
 ///
 /// This function expects as parameters the name of the Nt function whose syscall 
 /// wants to be executed, a variable with the function header, an Option variable with the same
 /// inner type that the original syscall would return and all the parameters expected by the syscall.
 ///
-/// # Examples - Executing NtQueryInformationProcess with direct syscall
+/// # Examples - Executing NtQueryInformationProcess with indirect syscall
 ///
 /// ```ignore      
 /// let function_type:NtQueryInformationProcess;
@@ -1369,10 +1418,10 @@ macro_rules! execute_syscall {
     ($a:expr, $b:expr, $c:expr, $($d:tt)*) => {
 
         let eat = $crate::get_ntdll_eat($crate::get_module_base_address("ntdll.dll"));
-        let id = $crate::get_syscall_id(eat, $a);
+        let id = $crate::get_syscall_id(&eat, $a);
         if id != -1
         {
-            let function_ptr = $crate::prepare_syscall(id as u32);
+            let function_ptr = $crate::prepare_syscall(id as u32, eat);
             if function_ptr != 0
             {
                 $b = std::mem::transmute(function_ptr);
@@ -1382,6 +1431,8 @@ macro_rules! execute_syscall {
             {
                 $c = None;
             }
+            let ptr: PVOID = std::mem::transmute(function_ptr);
+            $crate::virtual_free(ptr, 0, 0x00008000);
         }
         else
         {
