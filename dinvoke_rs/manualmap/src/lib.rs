@@ -85,7 +85,7 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,isize), S
     unsafe 
     {
         let handle = GetCurrentProcess();
-        let a = u64::default();
+        let a = usize::default();
         let base_address: *mut PVOID = std::mem::transmute(&a);
         let zero_bits = 0 as usize;
         let size: *mut usize = std::mem::transmute(&dwsize);
@@ -105,6 +105,8 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,isize), S
         relocate_module(&pe_info, image_ptr);
 
         rewrite_module_iat(&pe_info, image_ptr)?;
+
+        clean_dos_header(image_ptr);
 
         set_module_section_permissions(&pe_info, image_ptr)?;
 
@@ -136,17 +138,17 @@ pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String>
 
     unsafe {
 
-        let e_lfanew = *((module_ptr as u64 + 0x3C) as *const u32);
-        pe_metadata.pe = *((module_ptr as u64 + e_lfanew as u64) as *const u32);
+        let e_lfanew = *((module_ptr as usize + 0x3C) as *const u32);
+        pe_metadata.pe = *((module_ptr as usize + e_lfanew as usize) as *const u32);
 
         if pe_metadata.pe != 0x4550 
         {
             return Err(lc!("[x] Invalid PE signature."));
         }
 
-        pe_metadata.image_file_header = *((module_ptr as u64 + e_lfanew as u64 + 0x4) as *mut IMAGE_FILE_HEADER);
+        pe_metadata.image_file_header = *((module_ptr as usize + e_lfanew as usize + 0x4) as *mut IMAGE_FILE_HEADER);
 
-        let opt_header: *const u16 = (module_ptr as u64 + e_lfanew as u64 + 0x18) as *const u16; 
+        let opt_header: *const u16 = (module_ptr as usize + e_lfanew as usize + 0x18) as *const u16; 
         let pe_arch = *(opt_header);
 
         if pe_arch == 0x010B
@@ -170,7 +172,7 @@ pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String>
 
         for i in 0..pe_metadata.image_file_header.number_of_sections
         {
-            let section_ptr = (opt_header as u64 + pe_metadata.image_file_header.size_of_optional_header as u64 + (i * 0x28) as u64) as *const u8;
+            let section_ptr = (opt_header as usize + pe_metadata.image_file_header.size_of_optional_header as usize + (i * 0x28) as usize) as *const u8;
             let section_ptr: *const IMAGE_SECTION_HEADER = std::mem::transmute(section_ptr);
             sections.push(*section_ptr);
         }
@@ -208,7 +210,7 @@ pub fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_in
         let handle = GetCurrentProcess();
         let base_address: *mut c_void = std::mem::transmute(image_ptr);
         let buffer: *mut c_void = std::mem::transmute(module_ptr);
-        let written: u64 = 0;
+        let written: usize = 0;
         let bytes_written: *mut usize = std::mem::transmute(&written);
         let ret = dinvoke::nt_write_virtual_memory(handle, base_address, buffer, nsize, bytes_written);
 
@@ -220,8 +222,8 @@ pub fn map_module_to_memory(module_ptr: *const u8, image_ptr: *mut c_void, pe_in
 
         for section in &pe_info.sections
         {
-            let section_base_ptr = (image_ptr as u64 + section.VirtualAddress as u64) as *mut u8;
-            let section_content_ptr = (module_ptr as u64 + section.PointerToRawData as u64) as *mut u8;          
+            let section_base_ptr = (image_ptr as usize + section.VirtualAddress as usize) as *mut u8;
+            let section_content_ptr = (module_ptr as usize + section.PointerToRawData as usize) as *mut u8;          
 
             let base_address: *mut c_void = std::mem::transmute(section_base_ptr);
             let buffer: *mut c_void = std::mem::transmute(section_content_ptr);
@@ -248,7 +250,7 @@ pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void)
 {
     unsafe {
 
-        let module_memory_base: *mut u64 = std::mem::transmute(image_ptr);
+        let module_memory_base: *mut usize = std::mem::transmute(image_ptr);
         let image_data_directory;
         let image_delta: isize;
         if pe_info.is_32_bit 
@@ -262,7 +264,7 @@ pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void)
             image_delta = module_memory_base as isize - pe_info.opt_header_64.image_base as isize;
         }
 
-        let mut reloc_table_ptr = (module_memory_base as u64 + image_data_directory.VirtualAddress as u64) as *mut i32;
+        let mut reloc_table_ptr = (module_memory_base as usize + image_data_directory.VirtualAddress as usize) as *mut i32;
         let mut next_reloc_table_block = -1;
 
         while next_reloc_table_block != 0 
@@ -273,7 +275,7 @@ pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void)
 
             for i in 0..reloc_count
             {
-                let reloc_entry_ptr = (reloc_table_ptr as u64 + size_of::<IMAGE_BASE_RELOCATION>() as u64 + (i * 2) as u64) as *mut u16;
+                let reloc_entry_ptr = (reloc_table_ptr as usize + size_of::<IMAGE_BASE_RELOCATION>() as usize + (i * 2) as usize) as *mut u16;
                 let reloc_value = *reloc_entry_ptr;
 
                 let reloc_type = reloc_value >> 12;
@@ -284,14 +286,14 @@ pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void)
                     
                     if reloc_type == 0x3
                     {
-                        let patch_ptr = (module_memory_base as u64 + image_base_relocation.VirtualAddress as u64 + reloc_patch as u64) as *mut i32;
+                        let patch_ptr = (module_memory_base as usize + image_base_relocation.VirtualAddress as usize + reloc_patch as usize) as *mut i32;
                         let original_ptr = *patch_ptr;
                         let patch = original_ptr + image_delta as i32;
                         *patch_ptr = patch;
                     }
                     else 
                     {
-                        let patch_ptr = (module_memory_base as u64 + image_base_relocation.VirtualAddress as u64 + reloc_patch as u64) as *mut isize;
+                        let patch_ptr = (module_memory_base as usize + image_base_relocation.VirtualAddress as usize + reloc_patch as usize) as *mut isize;
                         let original_ptr = *patch_ptr;
                         let patch = original_ptr + image_delta as isize;
                         *patch_ptr = patch;
@@ -299,7 +301,7 @@ pub fn relocate_module(pe_info: &PeMetadata, image_ptr: *mut c_void)
                 }
             }
 
-            reloc_table_ptr = (reloc_table_ptr as u64 + image_base_relocation.SizeOfBlock as u64) as *mut i32;
+            reloc_table_ptr = (reloc_table_ptr as usize + image_base_relocation.SizeOfBlock as usize) as *mut i32;
             next_reloc_table_block = *reloc_table_ptr;
 
         }
@@ -316,7 +318,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
 {
     unsafe 
     {
-        let module_memory_base: *mut u64 = std::mem::transmute(image_ptr);
+        let module_memory_base: *mut usize = std::mem::transmute(image_ptr);
         let image_data_directory;
         if pe_info.is_32_bit 
         {
@@ -332,7 +334,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
             return Ok(()); // No hay import table
         }
 
-        let import_table_ptr = (module_memory_base as u64 + image_data_directory.VirtualAddress as u64) as *mut u64;
+        let import_table_ptr = (module_memory_base as usize + image_data_directory.VirtualAddress as usize) as *mut usize;
 
         let info = os_info::get();
         let version = info.version().to_string();
@@ -343,14 +345,14 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
         }
 
         let mut counter = 0;
-        let mut image_import_descriptor_ptr = (import_table_ptr as u64 + size_of::<IMAGE_IMPORT_DESCRIPTOR>() as u64 * counter) as *mut IMAGE_IMPORT_DESCRIPTOR;
+        let mut image_import_descriptor_ptr = (import_table_ptr as usize + size_of::<IMAGE_IMPORT_DESCRIPTOR>() as usize * counter) as *mut IMAGE_IMPORT_DESCRIPTOR;
         let mut image_import_descriptor = *image_import_descriptor_ptr;
 
         while image_import_descriptor.Name != 0
         {
             let mut dll_name = "".to_string();
             let mut c: char = ' ';
-            let mut ptr = (module_memory_base as u64 + image_import_descriptor.Name as u64) as *mut u8;
+            let mut ptr = (module_memory_base as usize + image_import_descriptor.Name as usize) as *mut u8;
             while c != '\0'
             {
                 c = *ptr as char;
@@ -382,16 +384,32 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
                     }
                 }
 
-                let mut module_handle = dinvoke::get_module_base_address(&dll_name) as u64;
+                let mut module_handle = dinvoke::get_module_base_address(&dll_name) as usize;
 
                 if module_handle == 0
                 {
-                    module_handle = dinvoke::load_library_a(&dll_name) as u64;
+
+                    module_handle = dinvoke::load_library_a(&dll_name) as usize;
 
                     if module_handle == 0
                     {
                         return Err(lc!("[x] Unable to find the specified module: {}", dll_name)); 
                     }
+                    /*let to_map = lc!("C:\\windows\\system32\\").to_string() + &dll_name;
+                    let mapped = read_and_map_module(&to_map)?;
+                    if mapped.1 == 0
+                    {
+                        module_handle = dinvoke::load_library_a(&dll_name) as usize;
+
+                        if module_handle == 0
+                        {
+                            return Err(lc!("[x] Unable to find the specified module: {}", dll_name)); 
+                        }
+                    }
+                    else 
+                    {
+                        module_handle = mapped.1 as usize;    
+                    }*/
                 }
 
                 if pe_info.is_32_bit
@@ -400,11 +418,11 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
 
                     loop 
                     {
-                        let image_thunk_data = (module_memory_base as u64 + image_import_descriptor.Anonymous.OriginalFirstThunk as u64 
-                            + i as u64 * size_of::<u32>() as u64) as *mut IMAGE_THUNK_DATA32;
+                        let image_thunk_data = (module_memory_base as usize + image_import_descriptor.Anonymous.OriginalFirstThunk as usize 
+                            + i as usize * size_of::<u32>() as usize) as *mut IMAGE_THUNK_DATA32;
                         let image_thunk_data = *image_thunk_data;
-                        let ft_itd = (module_memory_base as u64 + image_import_descriptor.FirstThunk as u64 +
-                            i as u64 * size_of::<u32>() as u64) as *mut i32;
+                        let ft_itd = (module_memory_base as usize + image_import_descriptor.FirstThunk as usize +
+                            i as usize * size_of::<u32>() as usize) as *mut i32;
                         if image_thunk_data.u1.AddressOfData == 0
                         {
                             break;
@@ -412,8 +430,8 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
 
                         if image_thunk_data.u1.AddressOfData < 0x80000000
                         {
-                            let mut imp_by_name_ptr = (module_memory_base as u64 + image_thunk_data.u1.AddressOfData as u64 + 
-                                size_of::<u16>() as u64) as *mut u8;
+                            let mut imp_by_name_ptr = (module_memory_base as usize + image_thunk_data.u1.AddressOfData as usize + 
+                                size_of::<u16>() as usize) as *mut u8;
                             let mut import_name: String = "".to_string();
                             let mut c: char = ' ';
                             while c != '\0'
@@ -495,12 +513,39 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
             }
 
             counter = counter + 1;
-            image_import_descriptor_ptr = (import_table_ptr as u64 + size_of::<IMAGE_IMPORT_DESCRIPTOR>() as u64 * counter) as *mut IMAGE_IMPORT_DESCRIPTOR;
+            image_import_descriptor_ptr = (import_table_ptr as usize + size_of::<IMAGE_IMPORT_DESCRIPTOR>() as usize * counter) as *mut IMAGE_IMPORT_DESCRIPTOR;
             image_import_descriptor = *image_import_descriptor_ptr;
 
         }
 
         Ok(())
+    }
+}
+
+pub fn clean_dos_header (image_ptr: *mut c_void) 
+{
+    unsafe
+    {
+        let mut base_addr = image_ptr as *mut u8;
+        let pe_header = image_ptr as isize + 0x3C;
+        while (base_addr as isize) < pe_header
+        {
+            *base_addr = 0;
+            base_addr = base_addr.add(1);            
+        }
+        base_addr = base_addr.add(4);
+
+        let e_lfanew = *((image_ptr as usize + 0x3C) as *const u32);
+        let pe = image_ptr as isize + e_lfanew as isize;
+
+        while (base_addr as isize) < pe
+        {
+            *base_addr = 0;
+            base_addr = base_addr.add(1);            
+        }
+
+        let pe = pe as *mut u16;
+        *pe = 0;
     }
 }
 
@@ -591,7 +636,7 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
                 return Err(lc!("[x] Unknown section permission."));
             }
 
-            let address: *mut c_void = (image_ptr as u64 + section.VirtualAddress as u64) as *mut c_void;
+            let address: *mut c_void = (image_ptr as usize + section.VirtualAddress as usize) as *mut c_void;
             let base_address: *mut PVOID = std::mem::transmute(&address);
             *size = section.Misc.VirtualSize as usize;
             let old_protection: *mut u32 = std::mem::transmute(&u32::default());
@@ -672,7 +717,7 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap,HANDLE),String>
 
         let offset: Vec<u8> =vec![0; size_of::<LARGE_INTEGER>()];
         let offset: *mut LARGE_INTEGER = std::mem::transmute(offset.as_ptr()); 
-        let base_address: *mut PVOID = std::mem::transmute(&u64::default());
+        let base_address: *mut PVOID = std::mem::transmute(&usize::default());
         let view_size: *mut usize = std::mem::transmute(&usize::default());
         let r = dinvoke::nt_map_view_of_section(
             *hsection, 
