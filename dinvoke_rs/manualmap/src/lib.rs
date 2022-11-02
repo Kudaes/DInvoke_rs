@@ -522,7 +522,10 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
     }
 }
 
-pub fn clean_dos_header (image_ptr: *mut c_void) 
+// This method is reponsible of cleaning IOCs that may reveal the pressence of a 
+// manually mapped PE in a private memory region. It will remove PE magic bytes,
+// DOS header and DOS stub.
+fn clean_dos_header (image_ptr: *mut c_void) 
 {
     unsafe
     {
@@ -755,6 +758,8 @@ pub fn map_to_allocated_memory (module_ptr: *const u8, image_ptr: *mut c_void, p
     relocate_module(&pe_info, image_ptr);
 
     rewrite_module_iat(&pe_info, image_ptr)?;
+
+    clean_dos_header(image_ptr);
 
     set_module_section_permissions(&pe_info, image_ptr)?;
 
