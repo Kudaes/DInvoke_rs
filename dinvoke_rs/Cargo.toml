@@ -5,7 +5,7 @@ edition = "2018"
 
 [profile.dev.package.dinvoke_rs]
 opt-level = 3
-debug = 0
+debug = 2
 
 [dependencies]
 dinvoke = { path = "dinvoke" }

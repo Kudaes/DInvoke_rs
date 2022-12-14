@@ -864,7 +864,7 @@ pub fn set_unhandled_exception_filter(address: usize) -> LptopLevelExceptionFilt
 
 /// Loads and retrieves a module's base address by dynamically calling LoadLibraryA.
 ///
-/// It will return either the module's base address or an Err with a descriptive error message.
+/// It will return either the module's base address or 0.
 ///
 /// # Examples
 ///
@@ -876,20 +876,40 @@ pub fn set_unhandled_exception_filter(address: usize) -> LptopLevelExceptionFilt
 pub fn load_library_a(module: &str) -> isize {
 
     unsafe 
-    {     
-        let ret: Option<HINSTANCE>;
-        let func_ptr: data::LoadLibraryA;
-        let name = CString::new(module.to_string()).expect("CString::new failed");
-        let function_name = PSTR{0: name.as_ptr() as *mut u8};
-        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
-        dynamic_invoke!(module_base_address,&lc!("LoadLibraryA"),func_ptr,ret,function_name);
+    {   
+        let ret: Option<i32>;
+        let func_ptr: data::RtlQueueWorkItem;
+        let name = CString::new(module.to_string()).expect("");
+        let module_name: PVOID = std::mem::transmute(name.as_ptr());
+        let k32 = get_module_base_address(&lc!("kernel32.dll")); 
+        let ntdll = get_module_base_address(&lc!("ntdll.dll")); 
+        let load_library = get_function_address(k32, &lc!("LoadLibraryA")) as usize;
+        dynamic_invoke!(ntdll,&lc!("RtlQueueWorkItem"),func_ptr,ret,load_library,module_name,0);
 
-        match ret {
-            Some(x) => return x.0 as isize,
-            None => return 0,
+
+        match ret
+        {
+            Some(x) => 
+            {
+                if x != 0
+                {
+                    return 0;
+                }
+                else 
+                {
+                    use std::{thread, time};
+                    let ten_millis = time::Duration::from_millis(500);
+                    thread::sleep(ten_millis);
+            
+                    return get_module_base_address(module);
+                }
+            },
+            None => { return 0; }
         }
-
-    }
+        
+       
+       
+    }     
 
 }
 

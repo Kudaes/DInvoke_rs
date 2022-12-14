@@ -38,6 +38,7 @@ pub type NtCreateThreadEx = unsafe extern "system" fn (*mut HANDLE, u32, *mut OB
 pub type RtlAdjustPrivilege = unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32;
 pub type RtlInitUnicodeString = unsafe extern "system" fn (*mut UNICODE_STRING, *const u16) -> () ;
 pub type RtlZeroMemory = unsafe extern "system" fn (PVOID, usize) -> ();
+pub type RtlQueueWorkItem = unsafe extern "system" fn (usize, PVOID, u32) -> i32;
  
 pub const DLL_PROCESS_DETACH: u32 = 0;
 pub const DLL_PROCESS_ATTACH: u32 = 1;
