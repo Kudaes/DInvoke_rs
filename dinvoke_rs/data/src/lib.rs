@@ -1,22 +1,13 @@
 use std::{collections::BTreeMap, ffi::c_void};
-use bindings::Windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, PSTR}, Security::SECURITY_ATTRIBUTES, System::{Diagnostics::Debug::{IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, MINIDUMP_CALLBACK_INFORMATION, MINIDUMP_EXCEPTION_INFORMATION, MINIDUMP_USER_STREAM_INFORMATION, EXCEPTION_RECORD}, SystemServices::OVERLAPPED, Kernel::UNICODE_STRING, WindowsProgramming::{OBJECT_ATTRIBUTES, IO_STATUS_BLOCK}}};
+use bindings::Windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, PSTR}, System::{Diagnostics::Debug::{IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, EXCEPTION_RECORD}, Kernel::UNICODE_STRING, WindowsProgramming::{OBJECT_ATTRIBUTES, IO_STATUS_BLOCK}}};
 use winapi::shared::ntdef::LARGE_INTEGER;
 
 pub type PVOID = *mut c_void;
 pub type DWORD = u32;
 pub type EAT = BTreeMap<isize,String>;
 pub type EntryPoint = extern "system" fn (HINSTANCE, u32, *mut c_void) -> BOOL;
-pub type RtlAddFunctionTable = unsafe extern "system" fn (usize, i32, isize) -> bool;
 pub type LoadLibraryA = unsafe extern "system" fn (PSTR) -> HINSTANCE;
 pub type OpenProcess = unsafe extern "system" fn (u32, i32, u32) -> HANDLE;
-pub type QueryFullProcessImageNameW = unsafe extern "system" fn (HANDLE, u32, *mut u16, *mut u32) -> i32;
-pub type MiniDumpWriteDump = unsafe extern "system" fn (HANDLE, u32, HANDLE, u32, *mut MINIDUMP_EXCEPTION_INFORMATION,
-    *mut MINIDUMP_USER_STREAM_INFORMATION, *mut MINIDUMP_CALLBACK_INFORMATION) -> i32;
-pub type CreateFileA = unsafe extern "system" fn (*mut u8, u32, u32, *const SECURITY_ATTRIBUTES, u32, u32, HANDLE) -> HANDLE;
-pub type ReadFile = unsafe extern "system" fn (HANDLE, PVOID, u32, *mut u32, *mut OVERLAPPED) -> i32; 
-pub type CreateTransaction = unsafe extern "system" fn (*mut SECURITY_ATTRIBUTES, *mut GUID, u32, u32, u32, u32, *mut u16) -> HANDLE;
-pub type CreateFileTransactedA = unsafe extern "system" fn (*mut u8, u32, u32, *const SECURITY_ATTRIBUTES, u32, u32, HANDLE,
-    HANDLE, *const u32, PVOID) -> HANDLE;
 pub type GetLastError = unsafe extern "system" fn () -> u32;
 pub type CloseHandle = unsafe extern "system" fn (HANDLE) -> i32;
 pub type VirtualFree = unsafe extern "system" fn (PVOID, usize, u32) -> bool;
@@ -414,15 +405,3 @@ pub struct RUNTIME_FUNCTION {
     pub end_addr: u32,
     pub unwind_addr: u32
 }
-
-/*#[derive(Copy, Clone, Default)]
-pub struct UNWIND_INFO {
-    pub version_flags: u8,
-    pub prolog_size: u8,
-    pub count_codes: u8,
-    pub register_and_offset: u8, 
-    pub unwind_codes_1: u8, 
-    pub unwind_codes_2: u8,
-    pub exception_handler: u32,
-    pub unused: u16
-}*/
