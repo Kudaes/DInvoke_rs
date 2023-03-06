@@ -2,14 +2,10 @@
 
 Rust port of [Dinvoke](https://github.com/TheWover/DInvoke). DInvoke_rs may be used for many purposes such as PE parsing, dynamic exported functions resolution, dynamically loading PE plugins at runtime, API hooks evasion and more. This project is meant to be used as a template (just add your own Rust code on top of it) or as a nested crate that can be imported on your own project.
 
-Features:
+Sinced this is a minimalist branch, it only offers the following features:
 * Dynamically resolve and invoke undocumented Windows APIs from Rust.
 * Primitives allowing for strategic API hook evasion. 
 * Indirect syscalls. **x64 only**
-* Manually map PE modules from disk or directly from memory.
-* PE headers parsing.
-* Map PE modules into sections backed by arbitrary modules on disk. **Not Opsec**
-* Module fluctuation to hide mapped PEs (concurrency supported). **Not Opsec**
 * Syscall parameters spoofing through exception filter + hardware breakpoints. **x64 only**
 
 # Credit
