@@ -14,3 +14,6 @@ bindings = { path = "bindings" }
 data = { path = "data" }
 overload = { path = "overload" }
 dmanager = { path = "dmanager" }
+
+[build-dependencies]
+static_vcruntime = "2.0"
