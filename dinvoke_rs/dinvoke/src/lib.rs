@@ -184,7 +184,8 @@ pub fn get_module_base_address (module_name: &str) -> isize
     let modules = process.module_list().unwrap();
     for m in modules
     {
-        if m.name().unwrap().to_lowercase() == module_name.to_ascii_lowercase()
+        if m.name().unwrap().to_lowercase().to_ascii_lowercase() == module_name.to_ascii_lowercase() ||
+            m.path().unwrap().to_str().unwrap().to_ascii_lowercase() == module_name.to_ascii_lowercase()
         {
             let handle = m.handle();
             return handle as isize;
