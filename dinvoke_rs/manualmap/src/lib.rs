@@ -563,7 +563,8 @@ pub fn add_runtime_table(pe_info: &PeMetadata, image_ptr: *mut c_void)
             {
                 let base = image_ptr as isize;
                 let mut i = 0i32;
-                let mut runtime: *mut data::RUNTIME_FUNCTION = std::mem::transmute(base + section.VirtualAddress as isize);
+                let r = base + section.VirtualAddress as isize;
+                let mut runtime: *mut data::RUNTIME_FUNCTION = std::mem::transmute(r);
                 while  (*runtime).begin_addr != 0 
                 {
                     runtime = runtime.add(1);
@@ -602,9 +603,11 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
 
         let handle = GetCurrentProcess();
         let base_address: *mut PVOID = std::mem::transmute(&image_ptr);
-        let size: *mut usize = std::mem::transmute(&isize::default());
+        let s = isize::default();
+        let size: *mut usize = std::mem::transmute(&s);
         *size = base_of_code;
-        let old_protection: *mut u32 = std::mem::transmute(&u32::default());
+        let o = u32::default();
+        let old_protection: *mut u32 = std::mem::transmute(&o);
         let _ret = dinvoke::nt_protect_virtual_memory(handle, base_address, size, PAGE_READONLY, old_protection);
        
         for section in &pe_info.sections
@@ -642,7 +645,8 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
             let address: *mut c_void = (image_ptr as usize + section.VirtualAddress as usize) as *mut c_void;
             let base_address: *mut PVOID = std::mem::transmute(&address);
             *size = section.Misc.VirtualSize as usize;
-            let old_protection: *mut u32 = std::mem::transmute(&u32::default());
+            let o = u32::default();
+            let old_protection: *mut u32 = std::mem::transmute(&o);
             let ret = dinvoke::nt_protect_virtual_memory(handle, base_address, size, new_protect, old_protection);
             
             let _r = dinvoke::close_handle(handle);
@@ -674,7 +678,8 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap,HANDLE),String>
         let mut module_path_utf16: Vec<u16> = module_path.encode_utf16().collect();
         module_path_utf16.push(0);
 
-        let object_name: *mut UNICODE_STRING = std::mem::transmute(&UNICODE_STRING::default());
+        let o_name = UNICODE_STRING::default();
+        let object_name: *mut UNICODE_STRING = std::mem::transmute(&o_name);
         dinvoke::rtl_init_unicode_string(object_name, module_path_utf16.as_ptr());
 
         let mut object_attributes = OBJECT_ATTRIBUTES::default();
@@ -685,7 +690,8 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap,HANDLE),String>
         let io: Vec<u8> = vec![0; size_of::<IO_STATUS_BLOCK>()];
         let io: *mut IO_STATUS_BLOCK = std::mem::transmute(io.as_ptr());
         let object_attributes: *mut OBJECT_ATTRIBUTES = std::mem::transmute(&object_attributes);
-        let hfile: *mut HANDLE = std::mem::transmute(&HANDLE::default());
+        let h = HANDLE::default();
+        let hfile: *mut HANDLE = std::mem::transmute(&h);
         let r =  dinvoke::nt_open_file(
             hfile, 
             FILE_READ_DATA | FILE_EXECUTE | FILE_READ_ATTRIBUTES | SYNCHRONIZE, 
@@ -701,8 +707,9 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap,HANDLE),String>
         }
 
         let max_size: Vec<u8> =vec![0; size_of::<LARGE_INTEGER>()];
-        let max_size: *mut LARGE_INTEGER = std::mem::transmute(max_size.as_ptr());   
-        let hsection: *mut HANDLE = std::mem::transmute(&HANDLE::default());
+        let max_size: *mut LARGE_INTEGER = std::mem::transmute(max_size.as_ptr());
+        let h = HANDLE::default();
+        let hsection: *mut HANDLE = std::mem::transmute(&h);
         let r = dinvoke::nt_create_section(
             hsection, 
             SECTION_ALL_ACCESS,
@@ -720,8 +727,10 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap,HANDLE),String>
 
         let offset: Vec<u8> =vec![0; size_of::<LARGE_INTEGER>()];
         let offset: *mut LARGE_INTEGER = std::mem::transmute(offset.as_ptr()); 
-        let base_address: *mut PVOID = std::mem::transmute(&usize::default());
-        let view_size: *mut usize = std::mem::transmute(&usize::default());
+        let b = usize::default();
+        let base_address: *mut PVOID = std::mem::transmute(&b);
+        let v = usize::default();
+        let view_size: *mut usize = std::mem::transmute(&v);
         let r = dinvoke::nt_map_view_of_section(
             *hsection, 
             HANDLE { 0: -1}, 
