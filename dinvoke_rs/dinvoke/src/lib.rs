@@ -368,7 +368,8 @@ pub fn get_api_mapping() -> HashMap<String,String> {
     unsafe 
     {
         let handle = GetCurrentProcess();
-        let process_information: *mut c_void = std::mem::transmute(&PROCESS_BASIC_INFORMATION::default());
+        let p = PROCESS_BASIC_INFORMATION::default();
+        let process_information: *mut c_void = std::mem::transmute(&p);
         let _ret = nt_query_information_process(
             handle, 
             0, 
@@ -817,9 +818,11 @@ pub fn ldr_get_procedure_address (module_handle: isize, function_name: &str, ord
         let ret: Option<i32>;
         let func_ptr: data::LdrGetProcedureAddress;
         let hmodule: PVOID = std::mem::transmute(module_handle);
-        let return_address: *mut c_void = std::mem::transmute(&usize::default());
+        let r = usize::default();
+        let return_address: *mut c_void = std::mem::transmute(&r);
         let return_address: *mut PVOID = std::mem::transmute(return_address);
-        let mut fun_name: *mut String = std::mem::transmute(&String::default());
+        let f = String::default();
+        let mut fun_name: *mut String = std::mem::transmute(&f);
 
         if function_name == ""
         {
@@ -1106,7 +1109,8 @@ pub fn nt_protect_virtual_memory (mut handle: HANDLE, mut base_address: *mut PVO
 
             handle = HANDLE {0: -1};
             base_address = ptr::null_mut();
-            size = std::mem::transmute(&(10usize));
+            let s = 10usize;
+            size = std::mem::transmute(&s);
             new_protection = PAGE_READONLY;
         }
 
@@ -1143,7 +1147,8 @@ pub fn nt_open_process (mut handle: *mut HANDLE, mut access: u32, mut attributes
             let h = HANDLE {0: -1};
             handle = std::mem::transmute(&h);
             access = PROCESS_QUERY_LIMITED_INFORMATION; 
-            attributes = std::mem::transmute(&OBJECT_ATTRIBUTES::default());
+            let a = OBJECT_ATTRIBUTES::default();
+            attributes = std::mem::transmute(&a);
             let c = CLIENT_ID {unique_process: HANDLE {0: std::process::id() as isize}, unique_thread: HANDLE::default()};
             client_id = std::mem::transmute(&c);
         }
@@ -1311,7 +1316,8 @@ pub fn nt_create_thread_ex (mut thread: *mut HANDLE, mut access: u32, mut attrib
             let h = HANDLE {0: -1};
             thread = std::mem::transmute(&h);
             access = PROCESS_QUERY_LIMITED_INFORMATION; 
-            attributes = std::mem::transmute(&OBJECT_ATTRIBUTES::default());
+            let a = OBJECT_ATTRIBUTES::default();
+            attributes = std::mem::transmute(&a);
             process = HANDLE {0: -1};
         }
 
@@ -1420,8 +1426,10 @@ macro_rules! dynamic_invoke {
 /// let function_type:NtQueryInformationProcess;
 /// let mut ret: Option<i32> = None; //NtQueryInformationProcess returns a NTSTATUS, which is a i32.
 /// let handle = GetCurrentProcess();
-/// let process_information: *mut c_void = std::mem::transmute(&PROCESS_BASIC_INFORMATION::default()); 
-/// let return_length: *mut u32 = std::mem::transmute(&u32::default());
+/// let p = PROCESS_BASIC_INFORMATION::default();
+/// let process_information: *mut c_void = std::mem::transmute(&pi); 
+/// let r = u32::default();
+/// let return_length: *mut u32 = std::mem::transmute(&r);
 /// dinvoke::execute_syscall!(
 ///     "NtQueryInformationProcess",
 ///     function_type,

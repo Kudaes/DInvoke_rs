@@ -86,7 +86,8 @@ fn main() {
             let privilege: u32 = 20; // This value matches with SeDebugPrivilege
             let enable: u8 = 1; // Enable the privilege
             let current_thread: u8 = 0; // Enable the privilege for the current process, not only for the current thread
-            let enabled: *mut u8 = std::mem::transmute(&u8::default()); 
+            let e = u8::default(); // https://github.com/Kudaes/rust_tips_and_tricks/tree/main#transmute
+            let enabled: *mut u8 = std::mem::transmute(&e); 
             dinvoke::dynamic_invoke!(ntdll,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled);
     
             match ret {
@@ -118,8 +119,10 @@ fn main() {
         let function_type:NtQueryInformationProcess;
         let mut ret: Option<i32> = None; //NtQueryInformationProcess returns a NTSTATUS, which is a i32.
         let handle = GetCurrentProcess();
-        let process_information: PVOID = std::mem::transmute(&PROCESS_BASIC_INFORMATION::default()); 
-        let return_length: *mut u32 = std::mem::transmute(&u32::default());
+        let p = PROCESS_BASIC_INFORMATION::default();
+        let process_information: PVOID = std::mem::transmute(&p); 
+        let r = u32::default();
+        let return_length: *mut u32 = std::mem::transmute(&r);
         dinvoke::execute_syscall!(
             "NtQueryInformationProcess",
             function_type,
@@ -165,7 +168,8 @@ fn main() {
         let privilege: u32 = 20; // This value matches with SeDebugPrivilege
         let enable: u8 = 1; // Enable the privilege
         let current_thread: u8 = 0; // Enable the privilege for the current process, not only for the current thread
-        let enabled: *mut u8 = std::mem::transmute(&u8::default()); 
+        let e = u8::default();
+        let enabled: *mut u8 = std::mem::transmute(&e); 
         dinvoke::dynamic_invoke!(ntdll.1,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled);
 
         match ret {
@@ -248,7 +252,8 @@ fn main() {
         let privilege: u32 = 20; // This value matches with SeDebugPrivilege
         let enable: u8 = 1; // Enable the privilege
         let current_thread: u8 = 0; // Enable the privilege for the current process, not only for the current thread
-        let enabled: *mut u8 = std::mem::transmute(&u8::default()); 
+        let e = u8::default();
+        let enabled: *mut u8 = std::mem::transmute(&e); 
         dinvoke::dynamic_invoke!(overload.1,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled);
 
         match ret {
@@ -286,7 +291,8 @@ fn main() {
         let h = HANDLE {0: -1};
         let handle: *mut HANDLE = std::mem::transmute(&h);
         let access = THREAD_ALL_ACCESS; 
-        let attributes: *mut OBJECT_ATTRIBUTES = std::mem::transmute(&OBJECT_ATTRIBUTES::default());
+        let a = OBJECT_ATTRIBUTES::default(); // https://github.com/Kudaes/rust_tips_and_tricks/tree/main#transmute
+        let attributes: *mut OBJECT_ATTRIBUTES = std::mem::transmute(&a);
         // We set the PID of the remote process 
         let remote_pid = 10952isize;
         let c = CLIENT_ID {unique_process: HANDLE {0: remote_pid}, unique_thread: HANDLE::default()};
