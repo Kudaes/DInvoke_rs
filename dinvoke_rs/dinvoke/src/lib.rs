@@ -10,7 +10,7 @@ use bindings::Windows::Win32::System::Diagnostics::Debug::{GetThreadContext,SetT
 use bindings::Windows::Win32::System::Kernel::UNICODE_STRING;
 use bindings::Windows::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
 use bindings::Windows::Win32::System::WindowsProgramming::{OBJECT_ATTRIBUTES, IO_STATUS_BLOCK};
-use bindings::Windows::Win32::{Foundation::{HANDLE, HINSTANCE, PSTR}, {System::Threading::{GetCurrentProcess,GetCurrentThread}}};
+use bindings::Windows::Win32::{Foundation::{HANDLE, HINSTANCE}, {System::Threading::{GetCurrentProcess,GetCurrentThread}}};
 use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, DLL_PROCESS_ATTACH, EAT, EntryPoint, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, 
     PVOID, PeMetadata, CONTEXT, NtAllocateVirtualMemoryArgs, EXCEPTION_POINTERS, NtOpenProcessArgs, CLIENT_ID, PROCESS_QUERY_LIMITED_INFORMATION, NtProtectVirtualMemoryArgs,
     PAGE_READONLY, NtWriteVirtualMemoryArgs, ExceptionHandleFunction, PS_ATTRIBUTE_LIST, NtCreateThreadExArgs, LptopLevelExceptionFilter};
@@ -679,10 +679,13 @@ pub fn prepare_syscall(id: u32, eat: EAT) -> isize {
         }
 
         let handle = GetCurrentProcess();
-        let base_address: *mut PVOID = std::mem::transmute(&usize::default());
+        let b = usize::default();
+        let base_address: *mut PVOID = std::mem::transmute(&b);
         let nsize: usize = sh.len() as usize;
-        let size: *mut usize = std::mem::transmute(&(nsize+1));
-        let old_protection: *mut u32 = std::mem::transmute(&u32::default());
+        let s = nsize + 1;
+        let size: *mut usize = std::mem::transmute(&s);
+        let o = u32::default();
+        let old_protection: *mut u32 = std::mem::transmute(&o);
         let ret = nt_allocate_virtual_memory(handle, base_address, 0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         
         if ret != 0
@@ -691,7 +694,8 @@ pub fn prepare_syscall(id: u32, eat: EAT) -> isize {
         }
         
         let buffer: *mut c_void = std::mem::transmute(sh.as_ptr());
-        let bytes_written: *mut usize = std::mem::transmute(&usize::default());
+        let b = usize::default();
+        let bytes_written: *mut usize = std::mem::transmute(&b);
         let ret = nt_write_virtual_memory(handle, *base_address, buffer, nsize, bytes_written);
 
         if ret != 0
@@ -997,8 +1001,8 @@ pub fn virtual_free(address: PVOID, size: usize, free_type: u32) -> bool {
     {
         let ret: Option<bool>;
         let func_ptr: data::VirtualFree;
-        let ntdll = get_module_base_address(&lc!("kernel32.dll"));
-        dynamic_invoke!(ntdll,&lc!("VirtualFree"),func_ptr,ret,address,size,free_type);
+        let k32 = get_module_base_address(&lc!("kernel32.dll"));
+        dynamic_invoke!(k32,&lc!("VirtualFree"),func_ptr,ret,address,size,free_type);
 
         match ret {
             Some(x) =>
@@ -1452,7 +1456,7 @@ macro_rules! execute_syscall {
             {
                 $c = None;
             }
-            let ptr: PVOID = std::mem::transmute(function_ptr);
+            let ptr = std::mem::transmute(function_ptr);
             $crate::virtual_free(ptr, 0, 0x00008000);
         }
         else
