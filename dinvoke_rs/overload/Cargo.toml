@@ -3,11 +3,10 @@ name = "overload"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[profile.dev.package.overload]
-opt-level = 3
-debug = 0
+# From https://stackoverflow.com/questions/29008127/why-are-rust-executables-so-huge
+[profile.release]
+opt-level = 'z'     # Optimize for size.
+strip = true  
 
 [dependencies]
 bindings = { path = "../bindings" }

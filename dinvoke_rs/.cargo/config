@@ -1,0 +1,2 @@
+[build]
+rustflags = ["--remap-path-prefix", "A=B"] # A = prefix to remove, probably the same value as the %USERPROFILE% env variable ; B = new value 
