@@ -18,7 +18,6 @@ All the credits go to the creators of the original C# implementation of this too
 * [FuzzySec (b33f)](https://twitter.com/FuzzySec)
 * [cobbr](https://twitter.com/cobbr_io)
 
-I just created this port as a way to learn Rust myself and with the idea of facilitate to the Red Team community the transition from more common and known languages (like C++ or C#) to Rust to develop their hacking tools.  
 
 # Usage
 
@@ -30,19 +29,19 @@ After that, you can open the project using your favorite IDE and start implement
     
     C:\Users\User\Desktop\DInvoke.rs\dinvoke_rs> code .
 
-# Example 1 - Resolving Exported Unmanaged APIs
+# Example 1 - Resolving Exported APIs
 
-The example below demonstrates how to use DInvoke_rs to dynamically find and call exports of a DLL.
+The example below demonstrates how to use DInvoke_rs to dynamically find and call exports of a DLL (ntdll.dll in this case).
 
-1) Get the base address of ntdll.dll by walking the Process Environment Block.
-2) Use get_function_address() to find an export within ntdll.dll by name. This is done by walking and parsing the module's EAT.
-3) Use get_function_address_by_ordinal() to find an export within ntdll.dll by ordinal. This is done by dynamically calling LdrGetProcedureAddress.
+1) Get ntdll's base address.
+2) Use get_function_address() to find an export within ntdll.dll by name. This is done by walking and parsing the dll's EAT.
+3) You can also find an export by ordinal by calling get_function_address_by_ordinal(). 
 
 ```rust
 
 fn main() {
 
-    // Dynamically obtain the base address of ntdll.dll. 
+    // Dynamically obtain ntdll.dll's base address. 
     let ntdll = dinvoke::get_module_base_address("ntdll.dll");
 
     if ntdll != 0 
@@ -53,14 +52,14 @@ fn main() {
         let nt_create_thread = dinvoke::get_function_address(ntdll, "NtCreateThread");
         if nt_create_thread != 0
         {
-            println!("The address where NtCreateThread is located at is 0x{:X}", nt_create_thread);
+            println!("NtCreateThread is at address 0x{:X}", nt_create_thread);
         }
 
         // Dynamically obtain the address of a function by ordinal.
         let ordinal_8 = dinvoke::get_function_address_by_ordinal(ntdll, 8);
         if ordinal_8 != 0 
         {
-            println!("The function with ordinal 8 is located at 0x{:X}", ordinal_8);
+            println!("The function with ordinal 8 is at addresss 0x{:X}", ordinal_8);
         }
     }   
 }
@@ -68,13 +67,13 @@ fn main() {
 ```
 
 # Example 2 - Invoking Unmanaged Code
-In the example below, we use DInvoke_rs to dynamically call RtlAdjustPrivilege in order to enable SeDebugPrivilege for the current process token. This kind of execution will bypass any API hooks present in Win32. Also, it won't create any entry on the final PE Import Address Table, making it harder to detect the PE behaviour without executing it.
+In the example below, we use DInvoke_rs to dynamically call RtlAdjustPrivilege in order to enable SeDebugPrivilege for the current process token. This kind of execution will bypass any API hooks present in Win32. Also, it won't create any entry on the final PE Import Address Table, making it harder to detect the PE's behaviour without executing it.
 
 ```rust
 
 fn main() {
 
-    // Dynamically obtain the base address of ntdll.dll. 
+    // Dynamically obtain ntdll.dll's base address. 
     let ntdll = dinvoke::get_module_base_address("ntdll.dll");
 
     if ntdll != 0 
@@ -82,13 +81,13 @@ fn main() {
         unsafe 
         {
             let func_ptr:  unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32; // Function header available at data::RtlAdjustPrivilege
-            let ret: Option<i32>; // RtlAdjustPrivilege returns an NSTATUS value, which is an i32
+            let ret: Option<i32>; // RtlAdjustPrivilege returns an NSTATUS value, which in Rust can be represented as an i32
             let privilege: u32 = 20; // This value matches with SeDebugPrivilege
             let enable: u8 = 1; // Enable the privilege
             let current_thread: u8 = 0; // Enable the privilege for the current process, not only for the current thread
             let e = u8::default(); // https://github.com/Kudaes/rust_tips_and_tricks/tree/main#transmute
             let enabled: *mut u8 = std::mem::transmute(&e); 
-            dinvoke::dynamic_invoke!(ntdll,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled);
+            dinvoke::dynamic_invoke!(ntdll,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled); 
     
             match ret {
                 Some(x) => 
@@ -109,7 +108,7 @@ In the next example, we use DInvoke_rs to execute the syscall that corresponds t
 ```rust
 
 use std::mem::size_of;
-use bindings::Windows::Win32::System::Threading::{GetCurrentProcess, PROCESS_BASIC_INFORMATION};
+use windows::Win32::System::Threading::{GetCurrentProcess, PROCESS_BASIC_INFORMATION};
 use data::{NtQueryInformationProcess, PVOID};
 
 fn main() {
@@ -137,31 +136,34 @@ fn main() {
         let pbi:*mut PROCESS_BASIC_INFORMATION;
         match ret {
             Some(x) => 
-	            if x == 0 {
-	                pbi = std::mem::transmute(process_information);
-	                let pbi = *pbi;
-	                println!("The Process Environment Block base address is 0x{:X}", pbi.PebBaseAddress as u64);
-	            },
+                if x == 0 {
+                    pbi = std::mem::transmute(process_information);
+                    let pbi = *pbi;
+                    println!("The Process Environment Block base address is 0x{:X}", pbi.PebBaseAddress as u64);
+                },
             None => println!("[x] Error executing direct syscall for NtQueryInformationProcess."),
         }  
 
     }
+}
 
 ```
 
 # Example 4 - Manual PE mapping
 In this example, DInvoke_rs is used to manually map a fresh copy of ntdll.dll, without any EDR hooks. Then that fresh ntdll.dll copy can be used to execute any desired function. 
 
-This manual map can also be executed from memory (use manually_map_module() in that case), allowing the classic reflective dll injection.
+This manual map can also be executed from memory (use manually_map_module() in that case), allowing the perform the classic reflective dll injection.
 
 ```rust
+
+use data::PeMetadata;
 
 fn main() {
 
     unsafe 
     {
 
-        let ntdll: (PeMetadata, i64) = manualmap::read_and_map_module("C:\\Windows\\System32\\ntdll.dll").unwrap();
+        let ntdll: (PeMetadata, isize) = manualmap::read_and_map_module("C:\\Windows\\System32\\ntdll.dll").unwrap();
         
         let func_ptr:  unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32; // Function header available at data::RtlAdjustPrivilege
         let ret: Option<i32>; // RtlAdjustPrivilege returns an NSTATUS value, which is an i32
@@ -174,8 +176,8 @@ fn main() {
 
         match ret {
             Some(x) => 
-	            if x == 0 { println!("NTSTATUS == Success. Privilege enabled."); } 
-	            else { println!("[x] NTSTATUS == {:X}", x as u32); },
+                if x == 0 { println!("NTSTATUS == Success. Privilege enabled."); } 
+                else { println!("[x] NTSTATUS == {:X}", x as u32); },
             None => panic!("[x] Error!"),
         }
 
@@ -191,6 +193,8 @@ This overload can also be executed mapping a PE from memory (as it is shown in t
 
 ```rust
 
+use data::PeMetadata;
+
 fn main() {
 
     unsafe 
@@ -199,7 +203,7 @@ fn main() {
         let payload: Vec<u8> = your_download_function();
 
         // This will map your payload into a legitimate file-backed memory section.
-        let overload: (PeMetadata, i64) = overload::overload_module(payload, "").unwrap();
+        let overload: (PeMetadata, isize) = overload::overload_module(payload, "").unwrap();
         
         // Then any exported function of the mapped PE can be dynamically called.
         // Let's say we want to execute a function with header pub fn random_function(i32, i32) -> i32
@@ -223,9 +227,11 @@ fn main() {
 # Example 6 - Module fluctuation
 DInvoke_rs allows to hide mapped PEs when they are not being used, making it harder for EDR memory inspection to detect the presence of a suspicious dll in your process. 
 
-For example, lets say we want to map a fresh copy of ntdll.dll in order to evade EDR hooks. Since two ntdll.dll in the same process could be considered a suspicious behaviour, we can map ntdll and hide it whenever we are not using it. This is very similar to the shellcode fluctuation technique, althought in this scenario we can take advantage of the fact that we are mapping a PE into a legitimate file-backed memory section, so we can replace the ntdll content for the original decoy module's content that the section is pointing to.
+For example, lets say we want to map a fresh copy of ntdll.dll in order to evade EDR hooks. Since two ntdll.dll in the same process could be considered a suspicious behaviour, we can map ntdll and hide it whenever we are not using it. This is very similar to the shellcode fluctuation technique, althought in this scenario we can take advantage of the fact that we are mapping a PE into a legitimate file-backed memory section, so we can replace the ntdll's content for the original decoy module's content that the section is pointing to.
 
 ```rust
+
+use dmanager::Manager;
 
 fn main() {
 
@@ -237,14 +243,14 @@ fn main() {
 
         // This will map ntdll.dll into a memory section pointing to cdp.dll. 
         // It will return the payload (ntdll) content, the decoy module (cdp) content and the payload base address.
-        let overload: ((Vec<u8>, Vec<u8>), i64) = overload::managed_read_and_overload("c:\\windows\\system32\\ntdll.dll", "c:\\windows\\system32\\cdp.dll").unwrap();
+        let overload: ((Vec<u8>, Vec<u8>), isize) = overload::managed_read_and_overload("c:\\windows\\system32\\ntdll.dll", "c:\\windows\\system32\\cdp.dll").unwrap();
         
         // This will allow the manager to start taking care of the module fluctuation process over this mapped PE.
         // Also, it will hide ntdll, replacing its content with the legitimate cdp.dll content.
-        let _r = manager.new_module(overload.1, overload.0.0, overload.0.1);
+        let _r = manager.new_module(overload.1 as i64, overload.0.0, overload.0.1);
 
         // Now, if we want to use our fresh ntdll copy, we just need to tell the manager to remap our payload into the memory section.
-        manager.map_module(overload.1);
+        let _ = manager.map_module(overload.1 as i64);
 
         // After ntdll has being remapped, we can dynamically call RtlAdjustPrivilege (or any other function) without worrying about EDR hooks.
         let func_ptr:  unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32; // Function header available at data::RtlAdjustPrivilege
@@ -264,7 +270,7 @@ fn main() {
         }
 
         // Since we dont want to use our ntdll copy for the moment, we hide it again. It can we remapped at any time.
-        manager.hide(overload.1);
+        let _ = manager.hide(overload.1 as i64);
 
     }
 }
@@ -277,6 +283,9 @@ In order to spoof the first 4 parameters of a syscall, DInvoke_rs has support fo
 For now, this feature is implemented for the functions NtOpenProcess, NtAllocateVirtualMemory, NtProtectVirtualMemory, NtWriteVirtualMemory and NtCreateThreadEx. In order to use it, it's just needed to activate the feature, set the exception handler and call the desired function through Dinvoke.
 
 ```rust
+
+use data::{THREAD_ALL_ACCESS, CLIENT_ID};
+use windows::{Win32::Foundation::HANDLE, Wdk::Foundation::OBJECT_ATTRIBUTES};
 
 fn main() {
     unsafe

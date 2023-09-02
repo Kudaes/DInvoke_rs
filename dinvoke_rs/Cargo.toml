@@ -11,10 +11,15 @@ strip = true
 [dependencies]
 dinvoke = { path = "dinvoke" }
 manualmap = { path = "manualmap" }
-bindings = { path = "bindings" }
 data = { path = "data" }
 overload = { path = "overload" }
 dmanager = { path = "dmanager" }
 
 [build-dependencies]
 static_vcruntime = "2.0"
+
+[dependencies.windows]
+version = "0.51"
+features = [
+    "Win32_Foundation"
+]

@@ -3,7 +3,7 @@ extern crate litcrypt;
 use_litcrypt!();
 
 use std::{env, fs, path::Path};
-use bindings::Windows::Win32::Foundation::HANDLE;
+use windows::Win32::Foundation::HANDLE;
 use data::{PeMetadata, PVOID, PAGE_READWRITE, PeManualMap};
 use winproc::Process;
 use rand::Rng;
@@ -87,7 +87,7 @@ pub fn find_decoy_module (min_size: i64) -> String
 ///     Err(e) => println!("Error ocurred: {}", e),      
 /// }
 /// ```
-pub fn read_and_overload(payload_path: &str, decoy_module_path: &str) -> Result<(PeMetadata,i64), String>
+pub fn read_and_overload(payload_path: &str, decoy_module_path: &str) -> Result<(PeMetadata,isize), String>
 {
 
     if !Path::new(payload_path).is_file()
@@ -122,7 +122,7 @@ pub fn read_and_overload(payload_path: &str, decoy_module_path: &str) -> Result<
 ///     Err(e) => println!("Error ocurred: {}", e),      
 /// }
 /// ```
-pub fn overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Result<(PeMetadata,i64), String> 
+pub fn overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Result<(PeMetadata,isize), String> 
 {   
     let mut decoy_module_path = decoy_module_path.to_string();
     if decoy_module_path != ""
@@ -151,7 +151,7 @@ pub fn overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Resul
 
         let decoy_metadata: (PeManualMap, HANDLE) = manualmap::map_to_section(&decoy_module_path)?;
 
-        let result: (PeMetadata,i64) = overload_to_section(file_content, decoy_metadata.0)?;
+        let result: (PeMetadata,isize) = overload_to_section(file_content, decoy_metadata.0)?;
 
         Ok(result)
 }
@@ -175,7 +175,7 @@ pub fn overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Resul
 ///     Err(e) => println!("Error ocurred: {}", e),      
 /// }
 /// ```
-pub fn overload_to_section (file_content: Vec<u8>, section_metadata: PeManualMap) -> Result<(PeMetadata,i64), String>
+pub fn overload_to_section (file_content: Vec<u8>, section_metadata: PeManualMap) -> Result<(PeMetadata,isize), String>
 {
     unsafe
     {
@@ -215,7 +215,7 @@ pub fn overload_to_section (file_content: Vec<u8>, section_metadata: PeManualMap
         manualmap::rewrite_module_iat(&pe_info, *base_address)?;
         manualmap::set_module_section_permissions(&pe_info, *base_address)?;
 
-        Ok((pe_info, *base_address as i64))
+        Ok((pe_info, *base_address as isize))
     }
 }
 
@@ -224,7 +224,7 @@ pub fn overload_to_section (file_content: Vec<u8>, section_metadata: PeManualMap
 /// by the legitimate decoy module.
 ///
 /// It will return either a pair ((Vec<u8>,Vec<u8>),i64) containing the mapped PE's (payload)
-/// content, the decoy module's content and the base payload base address or a string with a descriptive error messsage.
+/// content, the decoy module's content and the payload's base address or a string with a descriptive error messsage.
 ///
 /// # Examples
 ///
@@ -236,7 +236,7 @@ pub fn overload_to_section (file_content: Vec<u8>, section_metadata: PeManualMap
 ///     Err(e) => println!("Error ocurred: {}", e),      
 /// }
 /// ```
-pub fn managed_read_and_overload (payload_path: &str, decoy_module_path: &str) -> Result<((Vec<u8>,Vec<u8>),i64), String>
+pub fn managed_read_and_overload (payload_path: &str, decoy_module_path: &str) -> Result<((Vec<u8>,Vec<u8>),isize), String>
 {
 
     if !Path::new(payload_path).is_file()
@@ -271,7 +271,7 @@ pub fn managed_read_and_overload (payload_path: &str, decoy_module_path: &str) -
 ///     Err(e) => println!("Error ocurred: {}", e),      
 /// }
 /// ```
-pub fn managed_overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Result<(Vec<u8>,i64), String> 
+pub fn managed_overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Result<(Vec<u8>,isize), String> 
 {   
     let mut decoy_module_path = decoy_module_path.to_string();
     let decoy_content;
@@ -301,7 +301,7 @@ pub fn managed_overload_module (file_content: Vec<u8>, decoy_module_path: &str) 
 
         let decoy_metadata: (PeManualMap, HANDLE) = manualmap::map_to_section(&decoy_module_path)?;
 
-        let result: (PeMetadata,i64) = overload_to_section(file_content, decoy_metadata.0)?;
+        let result: (PeMetadata,isize) = overload_to_section(file_content, decoy_metadata.0)?;
 
         Ok((decoy_content, result.1))
 }

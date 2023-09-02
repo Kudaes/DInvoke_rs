@@ -9,14 +9,14 @@ use std::mem::size_of;
 use std::ffi::c_void;
 use winapi::shared::ntdef::LARGE_INTEGER;
 
-use bindings::{
-    Windows::Win32::System::Diagnostics::Debug::{IMAGE_OPTIONAL_HEADER32,IMAGE_SECTION_HEADER},
-    Windows::Win32::System::Threading::GetCurrentProcess,
-    Windows::Win32::System::SystemServices::{IMAGE_BASE_RELOCATION,IMAGE_IMPORT_DESCRIPTOR,IMAGE_THUNK_DATA32,IMAGE_THUNK_DATA64},
-    Windows::Win32::System::Kernel::UNICODE_STRING,
-    Windows::Win32::Foundation::HANDLE,
-    Windows::Win32::System::WindowsProgramming::{OBJECT_ATTRIBUTES, IO_STATUS_BLOCK},
+use windows::Win32::System::SystemServices::{IMAGE_BASE_RELOCATION, IMAGE_IMPORT_DESCRIPTOR};
+use windows::Win32::System::Threading::GetCurrentProcess;
+use windows::Win32::System::WindowsProgramming::{IMAGE_THUNK_DATA32, IMAGE_THUNK_DATA64};
+use windows::Win32::{
+    Foundation::{HANDLE,UNICODE_STRING}, 
+    System::{Diagnostics::Debug::{IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER},IO::IO_STATUS_BLOCK}
 };
+use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 
 use data::{IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, 
     PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PVOID, PeMetadata, SECTION_MEM_EXECUTE, 

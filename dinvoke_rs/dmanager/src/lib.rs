@@ -3,7 +3,7 @@ extern crate litcrypt;
 use_litcrypt!();
 
 use std::collections::HashMap;
-use bindings::Windows::Win32::Foundation::HANDLE;
+use windows::Win32::Foundation::HANDLE;
 use data::{PeMetadata, PVOID, PAGE_READWRITE};
 use rand::{Rng, distributions::Alphanumeric, thread_rng};
 

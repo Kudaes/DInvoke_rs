@@ -6,11 +6,11 @@ use std::mem::size_of;
 use std::panic;
 use std::{collections::HashMap, ptr};
 use std::ffi::CString;
-use bindings::Windows::Win32::System::Diagnostics::Debug::{GetThreadContext,SetThreadContext};
-use bindings::Windows::Win32::System::Kernel::UNICODE_STRING;
-use bindings::Windows::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
-use bindings::Windows::Win32::System::WindowsProgramming::{OBJECT_ATTRIBUTES, IO_STATUS_BLOCK};
-use bindings::Windows::Win32::{Foundation::{HANDLE, HINSTANCE}, {System::Threading::{GetCurrentProcess,GetCurrentThread}}};
+use windows::Win32::System::Diagnostics::Debug::{GetThreadContext,SetThreadContext};
+use windows::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
+use windows::Win32::System::IO::IO_STATUS_BLOCK;
+use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
+use windows::Win32::{Foundation::{HANDLE, HINSTANCE,UNICODE_STRING}, System::Threading::{GetCurrentProcess,GetCurrentThread}};
 use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, DLL_PROCESS_ATTACH, EAT, EntryPoint, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, 
     PVOID, PeMetadata, CONTEXT, NtAllocateVirtualMemoryArgs, EXCEPTION_POINTERS, NtOpenProcessArgs, CLIENT_ID, PROCESS_QUERY_LIMITED_INFORMATION, NtProtectVirtualMemoryArgs,
     PAGE_READONLY, NtWriteVirtualMemoryArgs, ExceptionHandleFunction, PS_ATTRIBUTE_LIST, NtCreateThreadExArgs, LptopLevelExceptionFilter};
@@ -54,8 +54,8 @@ pub fn set_hardware_breakpoint(address: usize)
     {
         let mut context = CONTEXT::default();   
         context.ContextFlags = 0x100000 | 0x10; // CONTEXT_DEBUG_REGISTERS
-        let mut lp_context: *mut bindings::Windows::Win32::System::Diagnostics::Debug::CONTEXT = std::mem::transmute(&context);
-        GetThreadContext(GetCurrentThread(), lp_context);
+        let mut lp_context: *mut windows::Win32::System::Diagnostics::Debug::CONTEXT = std::mem::transmute(&context);
+        let _ = GetThreadContext(GetCurrentThread(), lp_context);
 
         let mut context: *mut CONTEXT = std::mem::transmute(lp_context);
         (*context).Dr0 = address as u64;
@@ -67,7 +67,7 @@ pub fn set_hardware_breakpoint(address: usize)
         (*context).ContextFlags = 0x100000 | 0x10;
         lp_context = std::mem::transmute(context);
         
-        SetThreadContext(GetCurrentThread(), lp_context );
+        let _ = SetThreadContext(GetCurrentThread(), lp_context );
     }
 }
 
@@ -109,7 +109,7 @@ pub fn find_syscall_address(address: usize) -> usize
 /// to spoof syscalls parameters.
 pub unsafe extern "system" fn breakpoint_handler (exceptioninfo: *mut EXCEPTION_POINTERS) -> i32
 {
-    if (*(*(exceptioninfo)).exception_record).ExceptionCode.0 == 0x80000004 // STATUS_SINGLE_STEP
+    if (*(*(exceptioninfo)).exception_record).ExceptionCode.0 as u32 == 0x80000004 // STATUS_SINGLE_STEP
     {
         if ((*(*exceptioninfo).context_record).Dr7 & 1) == 1
         {

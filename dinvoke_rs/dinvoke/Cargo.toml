@@ -9,10 +9,21 @@ opt-level = 'z'     # Optimize for size.
 strip = true  
 
 [dependencies]
-bindings = { path = "../bindings" }
 data = { path = "../data" }
 libc = "0.2.101"
 winproc = "0.6.4"
 litcrypt = "0.3"
 winapi = "*"
 rand = "*"
+
+[dependencies.windows]
+version = "0.51"
+features = [
+    "Win32_Foundation",
+    "Win32_System",
+    "Win32_System_IO",
+    "Win32_System_Kernel",
+    "Win32_System_Diagnostics_Debug",
+    "Wdk_Foundation",
+    "Win32_System_Threading"
+]

@@ -1,2 +1,2 @@
 [build]
-rustflags = ["--remap-path-prefix", "A=B"] # A = prefix path to remove, probably the same value as the %USERPROFILE% env variable ; B = new value, it can be left emppy
+rustflags = ["--remap-path-prefix", "A=B"] # A = prefix path to remove, probably the same value as the %USERPROFILE% env variable ; B = new value, it can be left empty

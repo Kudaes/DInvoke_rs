@@ -9,10 +9,15 @@ opt-level = 'z'     # Optimize for size.
 strip = true  
 
 [dependencies]
-bindings = { path = "../bindings" }
 dinvoke = { path = "../dinvoke" }
 data = { path = "../data" }
 manualmap = { path = "../manualmap" }
 litcrypt = "0.3"
 winproc = "0.6.4"
 rand = "0.8.4"
+
+[dependencies.windows]
+version = "0.51"
+features = [
+    "Win32_Foundation"
+]

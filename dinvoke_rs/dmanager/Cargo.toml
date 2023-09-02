@@ -13,5 +13,10 @@ rand = "*"
 manualmap = { path = "../manualmap" }
 data = { path = "../data" }
 litcrypt = "0.3"
-bindings = { path = "../bindings" }
 dinvoke = { path = "../dinvoke" }
+
+[dependencies.windows]
+version = "0.51"
+features = [
+    "Win32_Foundation"
+]
