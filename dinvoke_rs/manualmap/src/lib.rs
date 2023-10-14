@@ -588,6 +588,7 @@ pub fn add_runtime_table(pe_info: &PeMetadata, image_ptr: *mut c_void)
 /// pointer to the base address where the module is mapped in memory.
 pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Result<(),String> 
 {
+    #![allow(invalid_reference_casting)]
     unsafe 
     {
         let base_of_code;

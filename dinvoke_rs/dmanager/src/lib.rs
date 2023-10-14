@@ -92,6 +92,7 @@ impl Manager {
 
     pub fn map_module (&mut self, address: i64) -> Result<(),String>
     {
+        #![allow(invalid_reference_casting)]
         unsafe
         {
             if self.payloads.contains_key(&address)
@@ -143,6 +144,7 @@ impl Manager {
 
     pub fn hide (&mut self, address: i64) -> Result<(),String>
     {
+        #![allow(invalid_reference_casting)]
         unsafe
         {
             if self.payloads.contains_key(&address)

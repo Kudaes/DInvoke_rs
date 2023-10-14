@@ -812,7 +812,7 @@ pub fn get_function_address_by_ordinal(module_base_address: isize, ordinal: u32)
 /// }
 /// ```
 pub fn ldr_get_procedure_address (module_handle: isize, function_name: &str, ordinal: u32) -> isize {
-
+    #![allow(invalid_reference_casting)]
     unsafe 
     {   
         let ret: Option<i32>;
