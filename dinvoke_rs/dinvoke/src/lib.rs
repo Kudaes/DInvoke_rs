@@ -2,6 +2,7 @@
 extern crate litcrypt;
 use_litcrypt!();
 
+use std::cell::UnsafeCell;
 use std::mem::size_of;
 use std::panic;
 use std::{collections::HashMap, ptr};
@@ -821,8 +822,8 @@ pub fn ldr_get_procedure_address (module_handle: isize, function_name: &str, ord
         let r = usize::default();
         let return_address: *mut c_void = std::mem::transmute(&r);
         let return_address: *mut PVOID = std::mem::transmute(return_address);
-        let f = String::default();
-        let mut fun_name: *mut String = std::mem::transmute(&f);
+        let f: UnsafeCell<String> = String::default().into();
+        let mut fun_name: *mut String = std::mem::transmute(f.get());
 
         if function_name == ""
         {

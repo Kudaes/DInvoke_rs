@@ -2,7 +2,7 @@
 extern crate litcrypt;
 use_litcrypt!();
 
-use std::collections::HashMap;
+use std::{collections::HashMap, cell::UnsafeCell};
 use windows::Win32::Foundation::HANDLE;
 use data::{PeMetadata, PVOID, PAGE_READWRITE};
 use rand::{Rng, distributions::Alphanumeric, thread_rng};
@@ -108,7 +108,8 @@ impl Manager {
 
                     let handle = HANDLE {0: -1};
                     let base_address: *mut PVOID = std::mem::transmute(&address);
-                    let size: *mut usize = std::mem::transmute(&i64::default());
+                    let s: UnsafeCell<i64> = i64::default().into();
+                    let size: *mut usize = std::mem::transmute(s.get());
                     
                     if decoy_info.is_32_bit
                     {
@@ -157,7 +158,8 @@ impl Manager {
     
                     let handle = HANDLE {0: -1};
                     let base_address: *mut PVOID = std::mem::transmute(&address);
-                    let size: *mut usize = std::mem::transmute(&i64::default());
+                    let s: UnsafeCell<usize> = usize::default().into();
+                    let size: *mut usize = std::mem::transmute(s.get());
                     
                     if pe_info.is_32_bit
                     {

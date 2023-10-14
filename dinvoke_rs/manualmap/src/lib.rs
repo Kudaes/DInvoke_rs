@@ -3,6 +3,7 @@ extern crate litcrypt;
 use_litcrypt!();
 
 
+use std::cell::UnsafeCell;
 use std::{collections::HashMap, path::Path};
 use std::{fs, ptr};
 use std::mem::size_of;
@@ -603,8 +604,8 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
 
         let handle = GetCurrentProcess();
         let base_address: *mut PVOID = std::mem::transmute(&image_ptr);
-        let s = isize::default();
-        let size: *mut usize = std::mem::transmute(&s);
+        let s: UnsafeCell<isize> = isize::default().into();
+        let size: *mut usize = std::mem::transmute(s.get());
         *size = base_of_code;
         let o = u32::default();
         let old_protection: *mut u32 = std::mem::transmute(&o);
