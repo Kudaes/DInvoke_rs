@@ -562,21 +562,13 @@ pub fn add_runtime_table(pe_info: &PeMetadata, image_ptr: *mut c_void)
             let s = std::str::from_utf8(&section.Name).unwrap();
             if s.contains(&lc!(".pdata"))
             {
-                let base = image_ptr as isize;
-                let mut i = 0i32;
-                let r = base + section.VirtualAddress as isize;
-                let mut runtime: *mut data::RUNTIME_FUNCTION = std::mem::transmute(r);
-                while  (*runtime).begin_addr != 0 
-                {
-                    runtime = runtime.add(1);
-                    i +=1 ;
-                }
+                let entry_count = (section.SizeOfRawData / 12) as i32; // 12 = size_of RUNTIME_FUNCTION
 
                 let func: data::RtlAddFunctionTable;
                 let _ret: Option<bool>;                
                 let k32 = dinvoke::get_module_base_address(&lc!("kernel32.dll"));
-                let function_table: usize = image_ptr as usize;
-                dinvoke::dynamic_invoke!(k32,&lc!("RtlAddFunctionTable"),func,_ret,function_table,i,base as isize);
+                let function_table_addr: usize = image_ptr as usize + section.VirtualAddress as usize;
+                dinvoke::dynamic_invoke!(k32,&lc!("RtlAddFunctionTable"),func,_ret,function_table_addr,entry_count,image_ptr as isize);
             }
         }
     }
