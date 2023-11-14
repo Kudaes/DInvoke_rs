@@ -18,7 +18,7 @@ All the credits go to the creators of the original C# implementation of this too
 * [FuzzySec (b33f)](https://twitter.com/FuzzySec)
 * [cobbr](https://twitter.com/cobbr_io)
 
-## Content
+# Content
 
 - [Resolve exported function](#Resolving-Exported-APIs)
 - [Dynamically invoke unmanaged code](#Invoking-Unmanaged-Code)
