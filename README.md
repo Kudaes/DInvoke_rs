@@ -66,7 +66,7 @@ fn main() {
 
 ```
 
-## Example 2 - Invoking Unmanaged Code
+## Invoking Unmanaged Code
 In the example below, we use DInvoke_rs to dynamically call RtlAdjustPrivilege in order to enable SeDebugPrivilege for the current process token. This kind of execution will bypass any API hooks present in Win32. Also, it won't create any entry on the final PE Import Address Table, making it harder to detect the PE's behaviour without executing it.
 
 ```rust
@@ -102,7 +102,7 @@ fn main() {
 
 ```
 
-## Example 3 - Executing indirect syscall
+## Executing indirect syscall
 In the next example, we use DInvoke_rs to execute the syscall that corresponds to the function NtQueryInformationProcess. Since the macro dinvoke::execute_syscall!() dynamically allocates and executes the shellcode required to perform the desired syscall, all hooks present in ntdll.dll are bypassed. The memory allocated is release once the syscall returns, avoiding the permanent presence of memory pages with execution permission.
 
 ```rust
@@ -149,7 +149,7 @@ fn main() {
 
 ```
 
-## Example 4 - Manual PE mapping
+## Manual PE mapping
 In this example, DInvoke_rs is used to manually map a fresh copy of ntdll.dll, without any EDR hooks. Then that fresh ntdll.dll copy can be used to execute any desired function. 
 
 This manual map can also be executed from memory (use manually_map_module() in that case), allowing the perform the classic reflective dll injection.
@@ -186,7 +186,7 @@ fn main() {
 
 ```
 
-## Example 5 - Overload memory section
+## Overload memory section
 In the following sample, DInvoke_rs is used to create a file-backed memory section, overloading it afterwards by manually mapping a PE. The memory section will point to a legitimate file located in %WINDIR%\System32\ by default, but any other decoy module can be used.
 
 This overload can also be executed mapping a PE from memory (as it is shown in the following example), allowing to perform the overload without writing the payload to disk.
@@ -224,7 +224,7 @@ fn main() {
 
 ```
 
-## Example 6 - Module fluctuation
+## Module fluctuation
 DInvoke_rs allows to hide mapped PEs when they are not being used, making it harder for EDR memory inspection to detect the presence of a suspicious dll in your process. 
 
 For example, lets say we want to map a fresh copy of ntdll.dll in order to evade EDR hooks. Since two ntdll.dll in the same process could be considered a suspicious behaviour, we can map ntdll and hide it whenever we are not using it. This is very similar to the shellcode fluctuation technique, althought in this scenario we can take advantage of the fact that we are mapping a PE into a legitimate file-backed memory section, so we can replace the ntdll's content for the original decoy module's content that the section is pointing to.
@@ -277,7 +277,7 @@ fn main() {
 
 ```
 
-## Example 7 - Syscall parameters spoofing
+## Syscall parameters spoofing
 In order to spoof the first 4 parameters of a syscall, DInvoke_rs has support for hardware breakpoints in combination with exception handlers. This allows to send not malicious parameters to a NT function, and after the EDR has inspected them, they are replaced by the original parameters before the syscall instruction is executed. For further information, check out the repository where the original idea comes from: [TamperingSyscalls](https://github.com/rad9800/TamperingSyscalls).
 
 For now, this feature is implemented for the functions NtOpenProcess, NtAllocateVirtualMemory, NtProtectVirtualMemory, NtWriteVirtualMemory and NtCreateThreadEx. In order to use it, it's just needed to activate the feature, set the exception handler and call the desired function through Dinvoke.
