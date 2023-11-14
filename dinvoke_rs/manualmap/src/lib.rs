@@ -1,5 +1,5 @@
 #[macro_use]
-extern crate litcrypt;
+extern crate litcrypt2;
 use_litcrypt!();
 
 
@@ -24,7 +24,7 @@ use data::{IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE,
     SECTION_MEM_READ, SECTION_MEM_WRITE, FILE_EXECUTE, FILE_READ_ATTRIBUTES, SYNCHRONIZE, FILE_READ_DATA, FILE_SHARE_READ, FILE_SHARE_DELETE, 
     FILE_SYNCHRONOUS_IO_NONALERT, FILE_NON_DIRECTORY_FILE, SECTION_ALL_ACCESS, SEC_IMAGE, PeManualMap};
 
-use litcrypt::lc;
+use litcrypt2::lc;
 
 
 /// Manually maps a PE from disk to the memory of the current process.

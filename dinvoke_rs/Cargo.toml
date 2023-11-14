@@ -5,7 +5,6 @@ edition = "2021"
 
 # From https://stackoverflow.com/questions/29008127/why-are-rust-executables-so-huge
 [profile.release]
-opt-level = 'z'     # Optimize for size.
 strip = true  
 
 [dependencies]

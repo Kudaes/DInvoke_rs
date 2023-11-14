@@ -12,7 +12,7 @@ strip = true
 dinvoke = { path = "../dinvoke" }
 data = { path = "../data" }
 manualmap = { path = "../manualmap" }
-litcrypt = "0.3"
+litcrypt2 = "0.1.0"
 winproc = "0.6.4"
 rand = "0.8.4"
 

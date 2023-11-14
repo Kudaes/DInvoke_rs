@@ -12,7 +12,7 @@ strip = true
 rand = "*"
 manualmap = { path = "../manualmap" }
 data = { path = "../data" }
-litcrypt = "0.3"
+litcrypt2 = "0.1.0"
 dinvoke = { path = "../dinvoke" }
 
 [dependencies.windows]
