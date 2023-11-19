@@ -1,9 +1,8 @@
 use std::{collections::BTreeMap, ffi::c_void};
-use windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, UNICODE_STRING}, Security::SECURITY_ATTRIBUTES, System::{Diagnostics::Debug::{IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, MINIDUMP_CALLBACK_INFORMATION, MINIDUMP_EXCEPTION_INFORMATION, MINIDUMP_USER_STREAM_INFORMATION, EXCEPTION_RECORD}, IO::{OVERLAPPED,IO_STATUS_BLOCK}}};
+use windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, UNICODE_STRING}, Security::SECURITY_ATTRIBUTES, System::{Diagnostics::Debug::{IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, MINIDUMP_CALLBACK_INFORMATION, MINIDUMP_EXCEPTION_INFORMATION, MINIDUMP_USER_STREAM_INFORMATION, EXCEPTION_RECORD}, IO::{OVERLAPPED,IO_STATUS_BLOCK}, SystemInformation::SYSTEM_INFO, Memory::MEMORY_BASIC_INFORMATION}};
 use windows::core::PSTR;
 use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use winapi::shared::ntdef::LARGE_INTEGER;
-
 
 pub type PVOID = *mut c_void;
 pub type DWORD = u32;
@@ -24,6 +23,12 @@ pub type CreateFileTransactedA = unsafe extern "system" fn (*mut u8, u32, u32, *
 pub type GetLastError = unsafe extern "system" fn () -> u32;
 pub type CloseHandle = unsafe extern "system" fn (HANDLE) -> i32;
 pub type VirtualFree = unsafe extern "system" fn (PVOID, usize, u32) -> bool;
+pub type LocalAlloc = unsafe extern "system" fn (u32, usize) -> PVOID;
+pub type TlsAlloc = unsafe extern "system" fn () -> u32;
+pub type TlsGetValue = unsafe extern "system" fn (u32) -> PVOID;
+pub type TlsSetValue = unsafe extern "system" fn (u32, PVOID) -> bool;
+pub type GetSystemInfo = unsafe extern "system" fn (*mut SYSTEM_INFO);
+pub type VirtualQueryEx = unsafe extern "system" fn (HANDLE, *const c_void, *mut MEMORY_BASIC_INFORMATION, usize) -> usize; 
 pub type LptopLevelExceptionFilter = usize;
 pub type SetUnhandledExceptionFilter = unsafe extern "system" fn (filter: LptopLevelExceptionFilter) -> LptopLevelExceptionFilter;
 pub type LdrGetProcedureAddress = unsafe extern "system" fn (PVOID, *mut String, u32, *mut PVOID) -> i32;
@@ -32,6 +37,7 @@ pub type NtProtectVirtualMemory = unsafe extern "system" fn (HANDLE, *mut PVOID,
 pub type NtAllocateVirtualMemory = unsafe extern "system" fn (HANDLE, *mut PVOID, usize, *mut usize, u32, u32) -> i32;
 pub type NtQueryInformationProcess = unsafe extern "system" fn (HANDLE, u32, PVOID, u32, *mut u32) -> i32;
 pub type NtQuerySystemInformation = unsafe extern "system" fn (u32, PVOID, u32, *mut u32) -> i32;
+pub type NtQueryInformationThread = unsafe extern "system" fn (HANDLE, u32, PVOID, u32, *mut u32) -> i32;
 pub type NtDuplicateObject = unsafe extern "system" fn (HANDLE, HANDLE, HANDLE, *mut HANDLE, u32, u32, u32) -> i32;
 pub type NtQueryObject = unsafe extern "system" fn (HANDLE, u32, PVOID, u32, *mut u32) -> i32;
 pub type NtOpenFile = unsafe extern "system" fn (*mut HANDLE, u32, *mut OBJECT_ATTRIBUTES, *mut IO_STATUS_BLOCK, u32, u32) -> i32;
@@ -43,7 +49,16 @@ pub type RtlAdjustPrivilege = unsafe extern "system" fn (u32, u8, u8, *mut u8) -
 pub type RtlInitUnicodeString = unsafe extern "system" fn (*mut UNICODE_STRING, *const u16) -> () ;
 pub type RtlZeroMemory = unsafe extern "system" fn (PVOID, usize) -> ();
 pub type RtlQueueWorkItem = unsafe extern "system" fn (usize, PVOID, u32) -> i32;
- 
+
+pub const JMP_RBX: u16 = 9215;
+pub const ADD_RSP: u32 = 1489273672;// add rsp,0x58 -> up to 11 parameters
+
+pub const TLS_OUT_OF_INDEXES: u32 = 0xFFFFFFFF;
+
+pub const UNW_FLAG_EHANDLER: u8 = 0x1; 
+pub const UNW_FLAG_UHANDLER: u8 = 0x2; 
+pub const UNW_FLAG_CHAININFO: u8 = 0x4; 
+
 pub const DLL_PROCESS_DETACH: u32 = 0;
 pub const DLL_PROCESS_ATTACH: u32 = 1;
 pub const DLL_THREAD_ATTACH: u32 = 2;

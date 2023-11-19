@@ -8,13 +8,15 @@ use std::panic;
 use std::{collections::HashMap, ptr};
 use std::ffi::CString;
 use windows::Win32::System::Diagnostics::Debug::{GetThreadContext,SetThreadContext};
+use windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION;
+use windows::Win32::System::SystemInformation::SYSTEM_INFO;
 use windows::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
 use windows::Win32::System::IO::IO_STATUS_BLOCK;
 use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows::Win32::{Foundation::{HANDLE, HINSTANCE,UNICODE_STRING}, System::Threading::{GetCurrentProcess,GetCurrentThread}};
 use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, DLL_PROCESS_ATTACH, EAT, EntryPoint, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, 
     PVOID, PeMetadata, CONTEXT, NtAllocateVirtualMemoryArgs, EXCEPTION_POINTERS, NtOpenProcessArgs, CLIENT_ID, PROCESS_QUERY_LIMITED_INFORMATION, NtProtectVirtualMemoryArgs,
-    PAGE_READONLY, NtWriteVirtualMemoryArgs, ExceptionHandleFunction, PS_ATTRIBUTE_LIST, NtCreateThreadExArgs, LptopLevelExceptionFilter};
+    PAGE_READONLY, NtWriteVirtualMemoryArgs, ExceptionHandleFunction, PS_ATTRIBUTE_LIST, NtCreateThreadExArgs, LptopLevelExceptionFilter, TLS_OUT_OF_INDEXES};
 use libc::c_void;
 use litcrypt2::lc;
 use winproc::Process;
@@ -997,6 +999,117 @@ pub fn close_handle(handle: HANDLE) -> bool {
             None => return false,
         }
     }
+}
+
+pub fn tls_alloc() -> u32
+{
+    unsafe 
+    {    
+        let ret: Option<u32>;
+        let func_ptr: data::TlsAlloc;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("TlsAlloc"),func_ptr,ret,);
+
+        match ret {
+            Some(x) => return x,
+            None => return TLS_OUT_OF_INDEXES, 
+        }
+    }
+}
+
+pub fn tls_get_value(index: u32) -> PVOID
+{
+    unsafe 
+    {    
+        let ret: Option<PVOID>;
+        let func_ptr: data::TlsGetValue;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("TlsGetValue"),func_ptr,ret,index);
+
+        match ret {
+            Some(x) => return x,
+            None => return ptr::null_mut(), 
+        }
+    }
+}
+
+pub fn tls_set_value(index: u32, data: PVOID) -> bool
+{
+    unsafe 
+    {    
+        let ret: Option<bool>;
+        let func_ptr: data::TlsSetValue;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("TlsSetValue"),func_ptr,ret,index,data);
+
+        match ret {
+            Some(x) => return x,
+            None => return false, 
+        }
+    }
+}
+
+pub fn get_last_error() -> u32
+{
+    unsafe 
+    {    
+        let ret: Option<u32>;
+        let func_ptr: data::GetLastError;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("GetLastError"),func_ptr,ret,);
+
+        match ret {
+            Some(x) => return x,
+            None => return 0xf, 
+        }
+    }
+}
+
+pub fn local_alloc(flags: u32, size: usize) -> PVOID
+{
+    unsafe 
+    {    
+        let ret: Option<PVOID>;
+        let func_ptr: data::LocalAlloc;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("localAlloc"),func_ptr,ret,flags,size);
+
+        match ret {
+            Some(x) => return x,
+            None => return ptr::null_mut(), 
+        }
+    }
+}
+
+/// Dynamically calls GetSystemInfo.
+///
+pub fn get_system_info(sysinfo: *mut SYSTEM_INFO)  {
+    
+    unsafe 
+    {
+        let _ret: Option<()>;
+        let func_ptr: data::GetSystemInfo;
+        let kernel32 = get_module_base_address(&lc!("kernel32.dll"));
+        dynamic_invoke!(kernel32,&lc!("GetSystemInfo"),func_ptr,_ret,sysinfo);
+    }   
+}
+
+/// Dynamically calls VirtualQueryEx.
+///
+pub fn virtual_query_ex(process_handle: HANDLE, page_address: *const c_void, buffer: *mut MEMORY_BASIC_INFORMATION, length: usize)  -> usize{
+    
+    unsafe 
+    {
+        let ret: Option<usize>;
+        let func_ptr: data::VirtualQueryEx;
+        let kernel32 = get_module_base_address(&lc!("kernel32.dll"));
+        dynamic_invoke!(kernel32,&lc!("VirtualQueryEx"),func_ptr,ret,process_handle,page_address,buffer,length);
+
+        match ret {
+            Some(x) => return x,
+            None => return 0 ,
+        }
+    }   
 }
 
 /// Dynamically calls VirtualFree.

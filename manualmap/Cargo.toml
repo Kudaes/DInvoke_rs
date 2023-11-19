@@ -1,14 +1,17 @@
 [package]
-name = "data"
+name = "manualmap"
 version = "0.1.0"
 edition = "2021"
 
 # From https://stackoverflow.com/questions/29008127/why-are-rust-executables-so-huge
 [profile.release]
-opt-level = 'z'     # Optimize for size.
 strip = true  
 
 [dependencies]
+dinvoke = { path = "../dinvoke" }
+data = { path = "../data" }
+litcrypt2 = "0.1.0"
+os_info = { version = "3.0", default-features = false }
 winapi = "*"
 
 [dependencies.windows]
@@ -24,5 +27,7 @@ features = [
     "Win32_System_WindowsProgramming",
     "Wdk_Foundation",
     "Win32_Storage_FileSystem",
-    "Win32_System_Memory"
+    "Win32_System_Memory",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading"
 ]

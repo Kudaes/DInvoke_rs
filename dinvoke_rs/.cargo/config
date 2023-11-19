@@ -1,8 +1,0 @@
-[build]
-rustflags = [
-    "--remap-path-prefix", "dinvoke=",
-    "--remap-path-prefix", "manualmap=",
-    "--remap-path-prefix", "overload=",
-    "--remap-path-prefix", "dmanager=",
-    "--remap-path-prefix", "AAA=BBB" # AAA = prefix path to remove, probably the same value as the %USERPROFILE% env variable ; BBB = new value, it can be left empty
-    ] 

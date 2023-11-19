@@ -29,6 +29,15 @@ All the credits go to the creators of the original C# implementation of this too
 - [Use hardware breakpoints to spoof syscall parameters](#Syscall-parameters-spoofing)
 
 # Usage
+
+Import this crate into your project by adding the following line to your `cargo.toml`:
+
+```rust
+[dependencies]
+dinvoke_rs = "0.1.2"
+```
+
+# Examples
 ## Resolving Exported APIs
 
 The example below demonstrates how to use DInvoke_rs to dynamically find and call exports of a DLL (ntdll.dll in this case).

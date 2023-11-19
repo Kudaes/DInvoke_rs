@@ -3,7 +3,6 @@ name = "dinvoke_rs"
 version = "0.1.0"
 edition = "2021"
 
-# From https://stackoverflow.com/questions/29008127/why-are-rust-executables-so-huge
 [profile.release]
 strip = true  
 
