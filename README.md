@@ -38,7 +38,7 @@ dinvoke_rs = "0.1.2"
 ```
 
 # Examples
-## Resolving Exported APIs
+## Resolving Exported API
 
 The example below demonstrates how to use DInvoke_rs to dynamically find and call exports of a DLL (ntdll.dll in this case).
 
@@ -51,21 +51,21 @@ The example below demonstrates how to use DInvoke_rs to dynamically find and cal
 fn main() {
 
     // Dynamically obtain ntdll.dll's base address. 
-    let ntdll = dinvoke::get_module_base_address("ntdll.dll");
+    let ntdll = dinvoke_rs::dinvoke::get_module_base_address("ntdll.dll");
 
     if ntdll != 0 
     {
         println!("ntdll.dll base address is 0x{:X}", ntdll);
         
         // Dynamically obtain the address of a function by name.
-        let nt_create_thread = dinvoke::get_function_address(ntdll, "NtCreateThread");
+        let nt_create_thread = dinvoke_rs::dinvoke::get_function_address(ntdll, "NtCreateThread");
         if nt_create_thread != 0
         {
             println!("NtCreateThread is at address 0x{:X}", nt_create_thread);
         }
 
         // Dynamically obtain the address of a function by ordinal.
-        let ordinal_8 = dinvoke::get_function_address_by_ordinal(ntdll, 8);
+        let ordinal_8 = dinvoke_rs::dinvoke::get_function_address_by_ordinal(ntdll, 8);
         if ordinal_8 != 0 
         {
             println!("The function with ordinal 8 is at addresss 0x{:X}", ordinal_8);
@@ -83,7 +83,7 @@ In the example below, we use DInvoke_rs to dynamically call RtlAdjustPrivilege i
 fn main() {
 
     // Dynamically obtain ntdll.dll's base address. 
-    let ntdll = dinvoke::get_module_base_address("ntdll.dll");
+    let ntdll = dinvoke_rs::dinvoke::get_module_base_address("ntdll.dll");
 
     if ntdll != 0 
     {
@@ -96,8 +96,8 @@ fn main() {
             let current_thread: u8 = 0; // Enable the privilege for the current process, not only for the current thread
             let e = u8::default(); // https://github.com/Kudaes/rust_tips_and_tricks/tree/main#transmute
             let enabled: *mut u8 = std::mem::transmute(&e); 
-            dinvoke::dynamic_invoke!(ntdll,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled); 
-    
+            dinvoke_rs::dinvoke::dynamic_invoke!(ntdll,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled); 
+
             match ret {
                 Some(x) => 
                 	if x == 0 { println!("NTSTATUS == Success. Privilege enabled."); } 
@@ -118,7 +118,7 @@ In the next example, we use DInvoke_rs to execute the syscall that corresponds t
 
 use std::mem::size_of;
 use windows::Win32::System::Threading::{GetCurrentProcess, PROCESS_BASIC_INFORMATION};
-use data::{NtQueryInformationProcess, PVOID};
+use dinvoke_rs::data::{NtQueryInformationProcess, PVOID};
 
 fn main() {
 
@@ -131,7 +131,7 @@ fn main() {
         let process_information: PVOID = std::mem::transmute(&p); 
         let r = u32::default();
         let return_length: *mut u32 = std::mem::transmute(&r);
-        dinvoke::execute_syscall!(
+        dinvoke_rs::dinvoke::execute_syscall!(
             "NtQueryInformationProcess",
             function_type,
             ret,
@@ -165,15 +165,15 @@ This manual map can also be executed from memory (use manually_map_module() in t
 
 ```rust
 
-use data::PeMetadata;
+use dinvoke_rs::data::PeMetadata;
 
 fn main() {
 
     unsafe 
     {
 
-        let ntdll: (PeMetadata, isize) = manualmap::read_and_map_module("C:\\Windows\\System32\\ntdll.dll").unwrap();
-        
+        let ntdll: (PeMetadata, isize) = dinvoke_rs::manualmap::read_and_map_module("C:\\Windows\\System32\\ntdll.dll").unwrap();
+
         let func_ptr:  unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32; // Function header available at data::RtlAdjustPrivilege
         let ret: Option<i32>; // RtlAdjustPrivilege returns an NSTATUS value, which is an i32
         let privilege: u32 = 20; // This value matches with SeDebugPrivilege
@@ -181,7 +181,7 @@ fn main() {
         let current_thread: u8 = 0; // Enable the privilege for the current process, not only for the current thread
         let e = u8::default();
         let enabled: *mut u8 = std::mem::transmute(&e); 
-        dinvoke::dynamic_invoke!(ntdll.1,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled);
+        dinvoke_rs::dinvoke::dynamic_invoke!(ntdll.1,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled);
 
         match ret {
             Some(x) => 
@@ -202,7 +202,7 @@ This overload can also be executed mapping a PE from memory (as it is shown in t
 
 ```rust
 
-use data::PeMetadata;
+use dinvoke_rs::data::PeMetadata;
 
 fn main() {
 
@@ -212,7 +212,7 @@ fn main() {
         let payload: Vec<u8> = your_download_function();
 
         // This will map your payload into a legitimate file-backed memory section.
-        let overload: (PeMetadata, isize) = overload::overload_module(payload, "").unwrap();
+        let overload: (PeMetadata, isize) = dinvoke_rs::overload::overload_module(payload, "").unwrap();
         
         // Then any exported function of the mapped PE can be dynamically called.
         // Let's say we want to execute a function with header pub fn random_function(i32, i32) -> i32
@@ -220,7 +220,7 @@ fn main() {
         let ret: Option<i32>; // The value that the called function will return
         let parameter1: i32 = 10;
         let parameter2: i32 = 20;
-        dinvoke::dynamic_invoke!(overload.1,"random_function",func_ptr,ret,parameter1,parameter2);
+        dinvoke_rs::dinvoke::dynamic_invoke!(overload.1,"random_function",func_ptr,ret,parameter1,parameter2);
 
         match ret {
             Some(x) => 
@@ -240,7 +240,7 @@ For example, lets say we want to map a fresh copy of ntdll.dll in order to evade
 
 ```rust
 
-use dmanager::Manager;
+use dinvoke_rs::dmanager::Manager;
 
 fn main() {
 
@@ -252,7 +252,7 @@ fn main() {
 
         // This will map ntdll.dll into a memory section pointing to cdp.dll. 
         // It will return the payload (ntdll) content, the decoy module (cdp) content and the payload base address.
-        let overload: ((Vec<u8>, Vec<u8>), isize) = overload::managed_read_and_overload("c:\\windows\\system32\\ntdll.dll", "c:\\windows\\system32\\cdp.dll").unwrap();
+        let overload: ((Vec<u8>, Vec<u8>), isize) = dinvoke_rs::overload::managed_read_and_overload("c:\\windows\\system32\\ntdll.dll", "c:\\windows\\system32\\cdp.dll").unwrap();
         
         // This will allow the manager to start taking care of the module fluctuation process over this mapped PE.
         // Also, it will hide ntdll, replacing its content with the legitimate cdp.dll content.
@@ -269,7 +269,7 @@ fn main() {
         let current_thread: u8 = 0; // Enable the privilege for the current process, not only for the current thread
         let e = u8::default();
         let enabled: *mut u8 = std::mem::transmute(&e); 
-        dinvoke::dynamic_invoke!(overload.1,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled);
+        dinvoke_rs::dinvoke::dynamic_invoke!(overload.1,"RtlAdjustPrivilege",func_ptr,ret,privilege,enable,current_thread,enabled);
 
         match ret {
             Some(x) => 
@@ -293,18 +293,18 @@ For now, this feature is implemented for the functions NtOpenProcess, NtAllocate
 
 ```rust
 
-use data::{THREAD_ALL_ACCESS, CLIENT_ID};
+use dinvoke_rs::data::{THREAD_ALL_ACCESS, CLIENT_ID};
 use windows::{Win32::Foundation::HANDLE, Wdk::Foundation::OBJECT_ATTRIBUTES};
 
 fn main() {
     unsafe
     {
         // We active the use of hardware breakpoints to spoof syscall parameters
-        dinvoke::use_hardware_breakpoints(true);
+        dinvoke_rs::dinvoke::use_hardware_breakpoints(true);
         // We get the memory address of our function and set it as the 
         // top-level exception handler.
         let handler = dinvoke::breakpoint_handler as usize;
-        dinvoke::set_unhandled_exception_filter(handler);
+        dinvoke_rs::dinvoke::set_unhandled_exception_filter(handler);
 
         let h = HANDLE {0: -1};
         let handle: *mut HANDLE = std::mem::transmute(&h);
