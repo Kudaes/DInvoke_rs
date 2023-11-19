@@ -38,7 +38,7 @@ dinvoke_rs = "0.1.2"
 ```
 
 # Examples
-## Resolving Exported API
+## Resolving Exported APIs
 
 The example below demonstrates how to use DInvoke_rs to dynamically find and call exports of a DLL (ntdll.dll in this case).
 
