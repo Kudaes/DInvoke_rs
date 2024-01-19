@@ -1206,7 +1206,6 @@ pub fn virtual_query_ex(process_handle: HANDLE, page_address: *const c_void, buf
         let func_ptr: data::VirtualQueryEx;
         let kernel32 = get_module_base_address(&lc!("kernel32.dll"));
         let f = get_function_address(kernel32, "VirtualQueryEx");
-        println!("f: {:x}", f);
         dynamic_invoke!(kernel32,&lc!("VirtualQueryEx"),func_ptr,ret,process_handle,page_address,buffer,length);
 
         match ret {
