@@ -19,7 +19,7 @@ use windows::Win32::{
 };
 use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 
-use data::{IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64, MEM_COMMIT, MEM_RESERVE, 
+use data::{ImageFileHeader, ImageOptionalHeader64, MEM_COMMIT, MEM_RESERVE, 
     PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PVOID, PeMetadata, SECTION_MEM_EXECUTE, 
     SECTION_MEM_READ, SECTION_MEM_WRITE, FILE_EXECUTE, FILE_READ_ATTRIBUTES, SYNCHRONIZE, FILE_READ_DATA, FILE_SHARE_READ, FILE_SHARE_DELETE, 
     FILE_SYNCHRONOUS_IO_NONALERT, FILE_NON_DIRECTORY_FILE, SECTION_ALL_ACCESS, SEC_IMAGE, PeManualMap};
@@ -29,30 +29,37 @@ use litcrypt2::lc;
 
 /// Manually maps a PE from disk to the memory of the current process.
 ///
+/// If the clean_headers parameters is set to true, the mapped pe's dos header will be removed during the
+/// mapping process. Otherwise, the dos header will be kept untouched.
+/// 
 /// It will return either a pair (PeMetadata,isize) containing the mapped PE
 /// metadata and its base address or a String with a descriptive error message.
 ///
 /// # Examples
 ///
 /// ```
-/// let ntdll = manualmap::read_and_map_module("c:\\windows\\system32\\ntdll.dll");
+/// let ntdll = manualmap::read_and_map_module("c:\\windows\\system32\\ntdll.dll", true);
 ///
 /// match ntdll {
 ///     Ok(x) => if x.1 != 0 {println!("The base address of ntdll.dll is 0x{:X}.", x.1);},
 ///     Err(e) => println!("{}", e),      
 /// }
 /// ```
-pub fn read_and_map_module (filepath: &str) -> Result<(PeMetadata,isize), String> 
+pub fn read_and_map_module (filepath: &str, clean_headers: bool) -> Result<(PeMetadata,isize), String> 
 {
     let file_content = fs::read(filepath).expect(&lc!("[x] Error opening the specified file."));
     let file_content_ptr = file_content.as_ptr();
-    let result = manually_map_module(file_content_ptr)?;
+
+    let result = manually_map_module(file_content_ptr, clean_headers)?;
 
     Ok(result)
 }
 
 /// Manually maps a PE into the current process.
 ///
+/// If the clean_headers parameters is set to true, the mapped pe's dos header will be removed during the
+/// mapping process. Otherwise, the dos header will be kept untouched.
+/// 
 /// It will return either a pair (PeMetadata,isize) containing the mapped PE
 /// metadata and its base address or a String with a descriptive error message.
 ///
@@ -63,9 +70,9 @@ pub fn read_and_map_module (filepath: &str) -> Result<(PeMetadata,isize), String
 ///
 /// let file_content = fs::read("c:\\windows\\system32\\ntdll.dll").expect("[x] Error opening the specified file.");
 /// let file_content_ptr = file_content.as_ptr();
-/// let result = manualmap::manually_map_module(file_content_ptr);
+/// let result = manualmap::manually_map_module(file_content_ptr, true);
 /// ```
-pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,isize), String> 
+pub fn manually_map_module (file_ptr: *const u8, clean_headers: bool) -> Result<(PeMetadata,isize), String> 
 {
     let pe_info = get_pe_metadata(file_ptr)?;
     if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) 
@@ -90,8 +97,9 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,isize), S
         let base_address: *mut PVOID = std::mem::transmute(&a);
         let zero_bits = 0 as usize;
         let size: *mut usize = std::mem::transmute(&dwsize);
+
         let ret = dinvoke::nt_allocate_virtual_memory(handle, base_address, zero_bits, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-        
+
         let _r = dinvoke::close_handle(handle);
 
         if ret != 0
@@ -102,12 +110,15 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,isize), S
         let image_ptr = *base_address;
 
         map_module_to_memory(file_ptr, image_ptr, &pe_info)?;
-        
+
         relocate_module(&pe_info, image_ptr);
 
         rewrite_module_iat(&pe_info, image_ptr)?;
 
-        clean_dos_header(image_ptr);
+        if clean_headers
+        {
+            clean_dos_header(image_ptr);
+        }
 
         set_module_section_permissions(&pe_info, image_ptr)?;
 
@@ -118,6 +129,40 @@ pub fn manually_map_module (file_ptr: *const u8) -> Result<(PeMetadata,isize), S
     }
 
 }
+
+/// Returns a pair containing a pointer to the Exception data of an arbitrary module and the size of the  
+/// corresponding PE section (.pdata). In case that it fails to retrieve this information, it returns
+/// null values.
+pub fn get_runtime_table(image_ptr: *mut c_void) -> (*mut data::RuntimeFunction, u32)
+{
+    unsafe 
+    {
+        let mut size: u32 = 0;
+        let module_metadata = get_pe_metadata(image_ptr as *const u8);
+        if !module_metadata.is_ok()
+        {
+            return (ptr::null_mut(), size);
+        }
+
+        let metadata = module_metadata.unwrap();
+
+        let mut runtime: *mut data::RuntimeFunction = ptr::null_mut();
+        for section in &metadata.sections
+        {   
+            let s = std::str::from_utf8(&section.Name).unwrap();
+            if s.contains(".pdata") 
+            {
+                let base = image_ptr as isize;
+                runtime = std::mem::transmute(base + section.VirtualAddress as isize);
+                size = section.SizeOfRawData;
+            }
+        }
+
+        return (runtime, size);
+    }
+
+}
+
 
 /// Retrieves PE headers information from the module base address.
 ///
@@ -147,7 +192,7 @@ pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String>
             return Err(lc!("[x] Invalid PE signature."));
         }
 
-        pe_metadata.image_file_header = *((module_ptr as usize + e_lfanew as usize + 0x4) as *mut IMAGE_FILE_HEADER);
+        pe_metadata.image_file_header = *((module_ptr as usize + e_lfanew as usize + 0x4) as *mut ImageFileHeader);
 
         let opt_header: *const u16 = (module_ptr as usize + e_lfanew as usize + 0x18) as *const u16; 
         let pe_arch = *(opt_header);
@@ -161,7 +206,7 @@ pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String>
         else if pe_arch == 0x020B 
         {
             pe_metadata.is_32_bit = false;
-            let opt_header_content: *const IMAGE_OPTIONAL_HEADER64 = std::mem::transmute(opt_header);
+            let opt_header_content: *const ImageOptionalHeader64 = std::mem::transmute(opt_header);
             pe_metadata.opt_header_64 = *opt_header_content;
         } 
         else 
@@ -396,21 +441,6 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
                     {
                         return Err(lc!("[x] Unable to find the specified module: {}", dll_name)); 
                     }
-                    /*let to_map = lc!("C:\\windows\\system32\\").to_string() + &dll_name;
-                    let mapped = read_and_map_module(&to_map)?;
-                    if mapped.1 == 0
-                    {
-                        module_handle = dinvoke::load_library_a(&dll_name) as usize;
-
-                        if module_handle == 0
-                        {
-                            return Err(lc!("[x] Unable to find the specified module: {}", dll_name)); 
-                        }
-                    }
-                    else 
-                    {
-                        module_handle = mapped.1 as usize;    
-                    }*/
                 }
 
                 if pe_info.is_32_bit

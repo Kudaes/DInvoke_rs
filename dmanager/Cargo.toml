@@ -9,10 +9,11 @@ opt-level = 'z'     # Optimize for size.
 strip = true  
 
 [dependencies]
-rand = "*"
+nanorand = "0.7.0"
 manualmap = { path = "../manualmap" }
+overload = { path = "../overload" }
 data = { path = "../data" }
-litcrypt2 = "0.1.0"
+litcrypt2 = "0.1.2"
 dinvoke = { path = "../dinvoke" }
 
 [dependencies.windows]

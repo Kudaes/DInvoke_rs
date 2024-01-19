@@ -7,6 +7,7 @@ use std::mem::size_of;
 use std::panic;
 use std::{collections::HashMap, ptr};
 use std::ffi::CString;
+use nanorand::{WyRand, Rng};
 use windows::Win32::System::Diagnostics::Debug::{GetThreadContext,SetThreadContext};
 use windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION;
 use windows::Win32::System::SystemInformation::SYSTEM_INFO;
@@ -15,13 +16,12 @@ use windows::Win32::System::IO::IO_STATUS_BLOCK;
 use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows::Win32::{Foundation::{HANDLE, HINSTANCE,UNICODE_STRING}, System::Threading::{GetCurrentProcess,GetCurrentThread}};
 use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, DLL_PROCESS_ATTACH, EAT, EntryPoint, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, 
-    PVOID, PeMetadata, CONTEXT, NtAllocateVirtualMemoryArgs, EXCEPTION_POINTERS, NtOpenProcessArgs, CLIENT_ID, PROCESS_QUERY_LIMITED_INFORMATION, NtProtectVirtualMemoryArgs,
-    PAGE_READONLY, NtWriteVirtualMemoryArgs, ExceptionHandleFunction, PS_ATTRIBUTE_LIST, NtCreateThreadExArgs, LptopLevelExceptionFilter, TLS_OUT_OF_INDEXES};
+    PVOID, PeMetadata, CONTEXT, NtAllocateVirtualMemoryArgs, ExceptionPointers, NtOpenProcessArgs, ClientId, PROCESS_QUERY_LIMITED_INFORMATION, NtProtectVirtualMemoryArgs,
+    PAGE_READONLY, NtWriteVirtualMemoryArgs, ExceptionHandleFunction, PsAttributeList, NtCreateThreadExArgs, LptopLevelExceptionFilter, TLS_OUT_OF_INDEXES, PsCreateInfo};
 use libc::c_void;
 use litcrypt2::lc;
 use winproc::Process;
 use winapi::shared::ntdef::LARGE_INTEGER;
-use rand::Rng;
 
 static mut HARDWARE_BREAKPOINTS: bool = false;
 static mut HARDWARE_EXCEPTION_FUNCTION: ExceptionHandleFunction = ExceptionHandleFunction::NtOpenProcess;
@@ -63,9 +63,9 @@ pub fn set_hardware_breakpoint(address: usize)
         let mut context: *mut CONTEXT = std::mem::transmute(lp_context);
         (*context).Dr0 = address as u64;
         (*context).Dr6 = 0;
-        (*context).Dr7 = ((*context).Dr7 & !(((1 << 2) - 1) << 16)) | (0 << 16);
-        (*context).Dr7 = ((*context).Dr7 & !(((1 << 2) - 1) << 18)) | (0 << 18);
-        (*context).Dr7 = ((*context).Dr7 & !(((1 << 1) - 1) << 0)) | (1 << 0);
+        (*context).Dr7 = (*context).Dr7 & !(((1 << 2) - 1) << 16); // 0xfffcffff ->  Break on instruction execution only
+        (*context).Dr7 = (*context).Dr7 & !(((1 << 2) - 1) << 18); // 0xfff3ffff 
+        (*context).Dr7 = ((*context).Dr7 & !(((1 << 1) - 1) << 0)) | (1 << 0); // 0xfffffffe 
 
         (*context).ContextFlags = 0x100000 | 0x10;
         lp_context = std::mem::transmute(context);
@@ -74,43 +74,11 @@ pub fn set_hardware_breakpoint(address: usize)
     }
 }
 
-/// Retrieves the memory address of a syscall instruction.
-///
-/// It expects the memory address of the function as a parameter, and 
-/// it will iterate over each following byte until it finds the value 0x0F05.
-///
-/// # Examples
-///
-/// ```
-/// let ntdll = dinvoke::get_module_base_address("ntdll.dll");
-/// let nt_open_process = dinvoke::get_function_address(ntdll, "NtOpenProcess");
-/// let syscall_addr = dinvoke::find_syscall_address(nt_open_process);
-/// ```
-pub fn find_syscall_address(address: usize) -> usize
-{
-    unsafe
-    {
-        let stub: [u8;2] = [ 0x0F, 0x05 ];
-        let mut ptr:*mut u8 = address as *mut u8;
-        for _i in 0..23
-        {
-            if *(ptr.add(1)) == stub[0] && *(ptr.add(2)) == stub[1]
-            {
-                return ptr.add(1) as usize;
-            }
-
-            ptr = ptr.add(1);
-        }
-    }
-
-    0usize
-}
-
 /// This function acts as an Exception Handler, and should be combined with a hardware breakpoint.
 ///
 /// Whenever the HB gets triggered, this function will be executed. This is meant to be used in order
 /// to spoof syscalls parameters.
-pub unsafe extern "system" fn breakpoint_handler (exceptioninfo: *mut EXCEPTION_POINTERS) -> i32
+pub unsafe extern "system" fn breakpoint_handler (exceptioninfo: *mut ExceptionPointers) -> i32
 {
     if (*(*(exceptioninfo)).exception_record).ExceptionCode.0 as u32 == 0x80000004 // STATUS_SINGLE_STEP
     {
@@ -157,7 +125,6 @@ pub unsafe extern "system" fn breakpoint_handler (exceptioninfo: *mut EXCEPTION_
                         (*(*exceptioninfo).context_record).R8 = std::mem::transmute(NT_CREATE_THREAD_EX_ARGS.attributes);
                         (*(*exceptioninfo).context_record).R9 = NT_CREATE_THREAD_EX_ARGS.process.0 as u64;
                     }                  
-                    _ => (*(*exceptioninfo).context_record).Rip += 1
                 }
             }
         }
@@ -519,7 +486,7 @@ pub fn get_ntdll_eat(module_base_address: isize) -> EAT {
 
     unsafe
     {
-        let mut eat:EAT = EAT::default();
+        let mut eat: EAT = EAT::default();
 
         let mut function_ptr:*mut i32;
         let pe_header = *((module_base_address + 0x3C) as *mut i32);
@@ -594,7 +561,7 @@ pub fn get_ntdll_eat(module_base_address: isize) -> EAT {
 ///     }
 /// }
 /// ```
-pub fn get_syscall_id(eat: &EAT, function_name: &str) -> i32 {
+pub fn get_syscall_id(eat: &EAT, function_name: &str) -> u32 {
 
     let mut i = 0;
     for (_a,b) in eat.iter()
@@ -607,7 +574,42 @@ pub fn get_syscall_id(eat: &EAT, function_name: &str) -> i32 {
         i = i + 1;
     }
 
-    -1
+    u32::MAX
+}
+
+/// Retrieves the memory address of a syscall instruction.
+///
+/// It expects the memory address of the function as a parameter, and 
+/// it will iterate over each following byte until it finds the value 0x0F05.
+/// 
+/// It will return either the memory address of the syscall instruction or zero in case that it
+/// wasn't found.
+///
+/// # Examples
+///
+/// ```
+/// let ntdll = dinvoke::get_module_base_address("ntdll.dll");
+/// let nt_open_process = dinvoke::get_function_address(ntdll, "NtOpenProcess");
+/// let syscall_addr = dinvoke::find_syscall_address(nt_open_process);
+/// ```
+pub fn find_syscall_address(address: usize) -> usize
+{
+    unsafe
+    {
+        let stub: [u8;2] = [ 0x0F, 0x05 ];
+        let mut ptr:*mut u8 = address as *mut u8;
+        for _i in 0..23
+        {
+            if *(ptr.add(1)) == stub[0] && *(ptr.add(2)) == stub[1]
+            {
+                return ptr.add(1) as usize;
+            }
+
+            ptr = ptr.add(1);
+        }
+    }
+
+    0usize
 }
 
 /// Given a valid syscall id, it will allocate the required shellcode to execute 
@@ -645,6 +647,11 @@ pub fn prepare_syscall(id: u32, eat: EAT) -> isize {
 
     unsafe 
     {
+        if id == u32::MAX
+        {
+            return 0;
+        }
+        
         let mut ptr: *mut u8 = std::mem::transmute(&id);
 
         for i in 0..4
@@ -653,27 +660,54 @@ pub fn prepare_syscall(id: u32, eat: EAT) -> isize {
             ptr = ptr.add(1);
         }
 
-        let max_range = eat.len();
-        let mut rng = rand::thread_rng();
-        let mut function = &"".to_string();
-        for s in eat.values()
-        {
-            let index = rng.gen_range(0..max_range);
-            if index < max_range / 10
-            {
-                function = s;
-            }
-        }
-
         let ntdll = get_module_base_address(&lc!("ntdll.dll"));
-        let mut function_addr = get_function_address(ntdll, function);
+        let export = eat.iter().skip(id as usize).next().unwrap();
+        let mut function_addr = get_function_address(ntdll, export.1);
 
         if function_addr == 0
         {
-            function_addr = get_function_address_by_ordinal(ntdll, id);
+            return 0;
         }
 
-        let syscall_addr = find_syscall_address(function_addr as usize);
+        let mut syscall_addr = find_syscall_address(function_addr as usize);
+        if syscall_addr == 0
+        {
+            let max_range = eat.len();
+            let mut function = &"".to_string();
+            let mut rng = WyRand::new();
+            for _ in 0..5
+            {
+                for s in eat.values()
+                {
+                    let index = rng.generate_range(0_usize..=max_range) as usize;
+        
+                    if index < max_range / 5
+                    {
+                        function = s;
+                        break;
+                    }
+                }
+        
+                function_addr = get_function_address(ntdll, function);
+        
+                if function_addr == 0
+                {
+                    return 0;
+                }
+        
+                syscall_addr = find_syscall_address(function_addr as usize);
+                if syscall_addr != 0
+                {
+                    break;
+                }
+            }
+
+            if syscall_addr == 0
+            {
+                return 0;
+            }
+        }
+
         let mut syscall_ptr: *mut u8 = std::mem::transmute(&syscall_addr);
 
         for j in 0..8
@@ -686,7 +720,7 @@ pub fn prepare_syscall(id: u32, eat: EAT) -> isize {
         let b = usize::default();
         let base_address: *mut PVOID = std::mem::transmute(&b);
         let nsize: usize = sh.len() as usize;
-        let s = nsize + 1;
+        let s = nsize;
         let size: *mut usize = std::mem::transmute(&s);
         let o = u32::default();
         let old_protection: *mut u32 = std::mem::transmute(&o);
@@ -792,6 +826,41 @@ pub fn get_function_address_by_ordinal(module_base_address: isize, ordinal: u32)
     ret    
 }
 
+/// Call NtCreateUserProcess to fork the current process.
+/// Inheritable objects are inherited by the child process (PROCESS_CREATE_FLAGS_INHERIT_FROM_PARENT).
+/// 
+/// The function returns an NTSTATUS.
+pub fn fork() -> i32
+{
+   unsafe
+   {
+      let process_handle = HANDLE::default();
+      let thread_handle = HANDLE::default();
+      let process_handle: *mut HANDLE = std::mem::transmute(&process_handle);
+      let thread_handle: *mut HANDLE = std::mem::transmute(&thread_handle);
+      let mut create_info: PsCreateInfo = std::mem::zeroed();
+      create_info.size = size_of::<PsCreateInfo>();
+      let ps_create_info: *mut PsCreateInfo = std::mem::transmute(&create_info);
+      
+      let ret = nt_create_user_process(
+        process_handle,  // NULL
+        thread_handle,  // NULL
+        (0x000F0000) |  (0x00100000) | 0xFFFF, //PROCESS_ALL_ACCESS
+        (0x000F0000) |  (0x00100000) | 0xFFFF, //THREAD_ALL_ACCESS
+        ptr::null_mut(), 
+        ptr::null_mut(), 
+        0x00000004, //PROCESS_CREATE_FLAGS_INHERIT_FROM_PARENT
+        0, 
+        ptr::null_mut(), 
+        ps_create_info, // Default PS_CREATE_INFO struct
+        ptr::null_mut()
+        );
+
+      ret
+   }
+
+}
+
 /// Retrieves the address of an exported function from the specified module either by its name 
 /// or by its ordinal number.
 ///
@@ -869,6 +938,23 @@ pub fn set_unhandled_exception_filter(address: usize) -> LptopLevelExceptionFilt
         match ret {
             Some(x) => return x,
             None => return 0,
+        }
+    }
+}
+
+/// Dynamically calls AddVectoredExceptionHandler.
+pub fn add_vectored_exception_handler(first: u32, address: usize) -> PVOID
+{
+    unsafe 
+    {
+        let ret: Option<PVOID>;
+        let func_ptr: data::AddVectoredExceptionHandler;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("AddVectoredExceptionHandler"),func_ptr,ret,first,address);
+
+        match ret {
+            Some(x) => return x,
+            None => return ptr::null_mut(),
         }
     }
 }
@@ -1049,6 +1135,22 @@ pub fn tls_set_value(index: u32, data: PVOID) -> bool
     }
 }
 
+pub fn get_module_handle_ex_a(flags: i32, module_name: *const u8, module: *mut usize) -> bool
+{
+    unsafe 
+    {    
+        let ret: Option<bool>;
+        let func_ptr: data::GetModuleHandleExA;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("GetModuleHandleExA"),func_ptr,ret,flags,module_name,module);
+
+        match ret {
+            Some(x) => return x,
+            None => return false, 
+        }
+    }
+}
+
 pub fn get_last_error() -> u32
 {
     unsafe 
@@ -1103,6 +1205,8 @@ pub fn virtual_query_ex(process_handle: HANDLE, page_address: *const c_void, buf
         let ret: Option<usize>;
         let func_ptr: data::VirtualQueryEx;
         let kernel32 = get_module_base_address(&lc!("kernel32.dll"));
+        let f = get_function_address(kernel32, "VirtualQueryEx");
+        println!("f: {:x}", f);
         dynamic_invoke!(kernel32,&lc!("VirtualQueryEx"),func_ptr,ret,process_handle,page_address,buffer,length);
 
         match ret {
@@ -1129,6 +1233,24 @@ pub fn virtual_free(address: PVOID, size: usize, free_type: u32) -> bool {
             None => return false,
         }
     }
+}
+
+pub fn nt_create_user_process(process_handle: *mut HANDLE, thread_handle: *mut HANDLE, process_access: u32, thread_access: u32, object_attributes: *mut OBJECT_ATTRIBUTES,
+    thread_object_attr: *mut OBJECT_ATTRIBUTES, process_flags: u32, thread_flags: u32, parameters: PVOID, create_info: *mut PsCreateInfo, attr_list: *mut PsAttributeList) -> i32 {
+    
+    unsafe 
+    {
+        let ret: Option<i32>;
+        let func_ptr: data::NtCreateUserProcess;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtCreateUserProcess"),func_ptr,ret,process_handle,thread_handle,process_access,thread_access,object_attributes,thread_object_attr,
+                        process_flags,thread_flags,parameters,create_info,attr_list);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    } 
 }
 
 /// Dynamically calls NtWriteVirtualMemory.
@@ -1240,7 +1362,7 @@ pub fn nt_protect_virtual_memory (mut handle: HANDLE, mut base_address: *mut PVO
 /// Dynamically calls NtOpenProcess.
 ///
 /// It will return the NTSTATUS value returned by the call.
-pub fn nt_open_process (mut handle: *mut HANDLE, mut access: u32, mut attributes: *mut OBJECT_ATTRIBUTES, mut client_id: *mut CLIENT_ID) -> i32 {
+pub fn nt_open_process (mut handle: *mut HANDLE, mut access: u32, mut attributes: *mut OBJECT_ATTRIBUTES, mut client_id: *mut ClientId) -> i32 {
     
     unsafe 
     {
@@ -1263,7 +1385,7 @@ pub fn nt_open_process (mut handle: *mut HANDLE, mut access: u32, mut attributes
             access = PROCESS_QUERY_LIMITED_INFORMATION; 
             let a = OBJECT_ATTRIBUTES::default();
             attributes = std::mem::transmute(&a);
-            let c = CLIENT_ID {unique_process: HANDLE {0: std::process::id() as isize}, unique_thread: HANDLE::default()};
+            let c = ClientId {unique_process: HANDLE {0: std::process::id() as isize}, unique_thread: HANDLE::default()};
             client_id = std::mem::transmute(&c);
         }
 
@@ -1288,6 +1410,25 @@ pub fn nt_query_information_process (handle: HANDLE, process_information_class: 
         let func_ptr: data::NtQueryInformationProcess;
         let ntdll = get_module_base_address(&lc!("ntdll.dll"));
         dynamic_invoke!(ntdll,&lc!("NtQueryInformationProcess"),func_ptr,ret,handle,process_information_class,process_information,length,return_length);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    } 
+}
+
+/// Dynamically calls NtQueryInformationThread.
+///
+/// It will return the NTSTATUS value returned by the call.
+pub fn nt_query_information_thread (handle: HANDLE, thread_information_class: u32, thread_information: PVOID, length: u32, return_length: *mut u32) -> i32 {
+    
+    unsafe 
+    {
+        let ret;
+        let func_ptr: data::NtQueryInformationThread;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtQueryInformationThread"),func_ptr,ret,handle,thread_information_class,thread_information,length,return_length);
 
         match ret {
             Some(x) => return x,
@@ -1409,7 +1550,7 @@ pub fn nt_map_view_of_section (section_handle: HANDLE, process_handle: HANDLE, b
 ///
 /// It will return the NTSTATUS value returned by the call.
 pub fn nt_create_thread_ex (mut thread: *mut HANDLE, mut access: u32, mut attributes: *mut OBJECT_ATTRIBUTES, mut process: HANDLE, function: PVOID, 
-    args: PVOID, flags: u32, zero: usize, stack: usize, reserve: usize, buffer: *mut PS_ATTRIBUTE_LIST) -> i32
+    args: PVOID, flags: u32, zero: usize, stack: usize, reserve: usize, buffer: *mut PsAttributeList) -> i32
 {
     unsafe 
     {
@@ -1443,6 +1584,27 @@ pub fn nt_create_thread_ex (mut thread: *mut HANDLE, mut access: u32, mut attrib
         }
     }
 }
+
+/// Dynamically calls NtReadVirtualMemory.
+///
+/// It will return the NTSTATUS value returned by the call.
+pub fn nt_read_virtual_memory (handle: HANDLE, base_address: PVOID, buffer: PVOID, size: usize, bytes_written: *mut usize) -> i32 {
+
+    unsafe 
+    {
+        let ret;
+        let func_ptr: data::NtReadVirtualMemory;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtReadVirtualMemory"),func_ptr,ret,handle,base_address,buffer,size,bytes_written);
+        
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    }
+
+}
+
 
 /// Dynamically calls an exported function from the specified module.
 ///
@@ -1566,7 +1728,7 @@ macro_rules! execute_syscall {
 
         let eat = $crate::get_ntdll_eat($crate::get_module_base_address("ntdll.dll"));
         let id = $crate::get_syscall_id(&eat, $a);
-        if id != -1
+        if id != u32::MAX
         {
             let function_ptr = $crate::prepare_syscall(id as u32, eat);
             if function_ptr != 0

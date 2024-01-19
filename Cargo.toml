@@ -1,10 +1,10 @@
 [package]
-name = "dinvoke_rs"
+name = "dinvokeRs"
 version = "0.1.0"
 edition = "2021"
 
 [profile.release]
-strip = true  
+strip = true 
 
 [dependencies]
 dinvoke = { path = "dinvoke" }

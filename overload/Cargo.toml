@@ -11,9 +11,9 @@ strip = true
 dinvoke = { path = "../dinvoke" }
 data = { path = "../data" }
 manualmap = { path = "../manualmap" }
-litcrypt2 = "0.1.0"
+litcrypt2 = "0.1.2"
 winproc = "0.6.4"
-rand = "0.8.4"
+nanorand = "0.7.0"
 
 [dependencies.windows]
 version = "0.51"

@@ -1,9 +1,8 @@
 [build]
 rustflags = [
     "--remap-path-prefix", "dinvoke=",
+    "--remap-path-prefix", "data=",
     "--remap-path-prefix", "manualmap=",
     "--remap-path-prefix", "overload=",
     "--remap-path-prefix", "dmanager=",
-    "--remap-path-prefix", "AAA=BBB" # AAA = string to remove (e.g. the same value as the %USERPROFILE% env variable); 
-                                     # BBB = new value, it can be left empty to remove strings from the final binary
     ] 
