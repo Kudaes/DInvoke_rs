@@ -9,6 +9,7 @@ pub type DWORD = u32;
 pub type EAT = BTreeMap<isize,String>;
 pub type EntryPoint = extern "system" fn (HINSTANCE, u32, *mut c_void) -> BOOL;
 pub type LoadLibraryA = unsafe extern "system" fn (PSTR) -> HINSTANCE;
+pub type FreeLibrary = unsafe extern "system" fn (isize) -> HINSTANCE;
 pub type OpenProcess = unsafe extern "system" fn (u32, i32, u32) -> HANDLE;
 pub type EnumProcesses = unsafe extern "system" fn (*mut u32, u32, *mut u32) -> bool;
 pub type QueueUserWorkItem = unsafe extern "system" fn (*mut c_void, *mut c_void, u32) -> bool;
@@ -89,6 +90,13 @@ pub const UNW_FLAG_EHANDLER: u8 = 0x1;
 pub const UNW_FLAG_UHANDLER: u8 = 0x2; 
 pub const UNW_FLAG_CHAININFO: u8 = 0x4; 
 
+// COFF Relocation constants
+pub const IMAGE_REL_AMD64_ABSOLUTE: u16 = 0x0000;
+pub const IMAGE_REL_AMD64_ADDR64: u16 = 0x0001;
+pub const IMAGE_REL_AMD64_ADDR32: u16 = 0x0002;
+pub const IMAGE_REL_AMD64_ADDR32NB: u16 = 0x0003;
+pub const IMAGE_REL_AMD64_REL32: u16 = 0x0004;
+
 pub const DLL_PROCESS_DETACH: u32 = 0;
 pub const DLL_PROCESS_ATTACH: u32 = 1;
 pub const DLL_THREAD_ATTACH: u32 = 2;
@@ -166,6 +174,72 @@ impl Default for PeMetadata {
             opt_header_32: IMAGE_OPTIONAL_HEADER32::default(),
             opt_header_64: ImageOptionalHeader64::default(),
             sections: Vec::default(),  
+        }
+    }
+}
+
+#[derive(Clone)]
+#[repr(C)]
+pub struct CoffMetadata {
+    pub image_file_header: ImageFileHeader,
+    pub sections: Vec<IMAGE_SECTION_HEADER>,
+    pub sections_order: BTreeMap<u32,Vec<u16>>,
+    pub sections_mapped_addresses: BTreeMap<u16,usize>,
+    pub symbols: Vec<CoffSymbol>,
+    pub imports: BTreeMap<String,usize>
+}
+
+impl Default for CoffMetadata {
+    fn default() -> CoffMetadata {
+        CoffMetadata {
+            image_file_header: ImageFileHeader::default(),
+            sections: Vec::default(),
+            sections_order: BTreeMap::default(),
+            sections_mapped_addresses: BTreeMap::default(),   
+            symbols: Vec::default(),
+            imports: BTreeMap::default()
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct AuxSymbolEntry {
+    pub aux_symbol_entry: [u8;18]
+}
+
+impl Default for AuxSymbolEntry {
+    fn default() -> AuxSymbolEntry {
+        AuxSymbolEntry {
+            aux_symbol_entry: [0u8;18]  
+        }
+    }
+}
+
+#[derive(Clone)]
+#[repr(C)]
+pub struct CoffSymbol {
+    pub name_str: String,
+    pub symbol_offset: u32, // offset in strings table in case that the symbol's name is bigger than 8 bytes
+    pub value: u32,
+    pub section_number: u16,
+    pub symbol_type: u16,
+    pub storage_class: u8,
+    pub aux_symbols: u8,
+    pub aux_symbol_entries: Vec<AuxSymbolEntry>
+}
+
+impl Default for CoffSymbol {
+    fn default() -> CoffSymbol {
+        CoffSymbol {
+            name_str:  String::default(),
+            symbol_offset: u32::default(),
+            value: u32::default(),
+            section_number: u16::default(),
+            symbol_type: u16::default(),
+            storage_class: u8::default(),
+            aux_symbols: u8::default(),
+            aux_symbol_entries: Vec::default()  
         }
     }
 }

@@ -3,8 +3,12 @@ name = "dinvokeRs"
 version = "0.1.0"
 edition = "2021"
 
+[profile.dev]
+debug-assertions = false
+
 [profile.release]
-strip = true 
+debug-assertions = false # required to avoid misaligned pointer dereference panics
+strip = true  
 
 [dependencies]
 dinvoke = { path = "dinvoke" }

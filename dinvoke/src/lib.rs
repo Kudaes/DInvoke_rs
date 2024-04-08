@@ -15,9 +15,7 @@ use windows::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
 use windows::Win32::System::IO::IO_STATUS_BLOCK;
 use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows::Win32::{Foundation::{HANDLE, HINSTANCE,UNICODE_STRING}, System::Threading::{GetCurrentProcess,GetCurrentThread}};
-use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, DLL_PROCESS_ATTACH, EAT, EntryPoint, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READWRITE, 
-    PVOID, PeMetadata, CONTEXT, NtAllocateVirtualMemoryArgs, ExceptionPointers, NtOpenProcessArgs, ClientId, PROCESS_QUERY_LIMITED_INFORMATION, NtProtectVirtualMemoryArgs,
-    PAGE_READONLY, NtWriteVirtualMemoryArgs, ExceptionHandleFunction, PsAttributeList, NtCreateThreadExArgs, LptopLevelExceptionFilter, TLS_OUT_OF_INDEXES, PsCreateInfo};
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, ExceptionHandleFunction, ExceptionPointers, LptopLevelExceptionFilter, NtAllocateVirtualMemoryArgs, NtCreateThreadExArgs, NtOpenProcessArgs, NtProtectVirtualMemoryArgs, NtWriteVirtualMemoryArgs, PeMetadata, PsAttributeList, PsCreateInfo, CONTEXT, DLL_PROCESS_ATTACH, EAT, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READONLY, PAGE_READWRITE, PROCESS_QUERY_LIMITED_INFORMATION, PVOID, TLS_OUT_OF_INDEXES};
 use libc::c_void;
 use litcrypt2::lc;
 use winproc::Process;
@@ -60,7 +58,7 @@ pub fn set_hardware_breakpoint(address: usize)
         let mut lp_context: *mut windows::Win32::System::Diagnostics::Debug::CONTEXT = std::mem::transmute(&context);
         let _ = GetThreadContext(GetCurrentThread(), lp_context);
 
-        let mut context: *mut CONTEXT = std::mem::transmute(lp_context);
+        let context: *mut CONTEXT = std::mem::transmute(lp_context);
         (*context).Dr0 = address as u64;
         (*context).Dr6 = 0;
         (*context).Dr7 = (*context).Dr7 & !(((1 << 2) - 1) << 16); // 0xfffcffff ->  Break on instruction execution only
@@ -1003,13 +1001,36 @@ pub fn load_library_a(module: &str) -> isize {
             },
             None => { return 0; }
         }
-        
-       
-       
     }     
-
 }
 
+/// Frees the loaded dll. The function expects the module's base address.
+///
+/// If the function succeeds, the return value is nonzero.
+///
+/// # Examples
+///
+/// ```
+/// let module_handle: isize = dinvoke::load_library_a("somedll.dll");
+/// let ret = dinvoke::free_library(module_handle);
+///
+/// if ret == 0 {println!("somedll.dll sucessfully freed.");
+/// ```
+pub fn free_library(module_handle: isize) -> isize {
+
+    unsafe 
+    {   
+        let ret: Option<HINSTANCE>;
+        let func_ptr: data::FreeLibrary;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("FreeLibrary"),func_ptr,ret,module_handle);
+
+        match ret {
+            Some(x) => return x.0 as isize,
+            None => return 0,
+        }
+    }     
+}
 /// Opens a HANDLE to a process.
 ///
 /// If the function fails, it will return a null HANDLE.

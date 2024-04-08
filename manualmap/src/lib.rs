@@ -45,14 +45,22 @@ use litcrypt2::lc;
 ///     Err(e) => println!("{}", e),      
 /// }
 /// ```
-pub fn read_and_map_module (filepath: &str, clean_headers: bool) -> Result<(PeMetadata,isize), String> 
+pub fn read_and_map_module (filepath: &str, clean_dos_header: bool) -> Result<(PeMetadata,isize), String> 
 {
     let file_content = fs::read(filepath).expect(&lc!("[x] Error opening the specified file."));
-    let file_content_ptr = file_content.as_ptr();
+    let file_content_ptr = file_content.as_ptr() as *mut _;
+  
+    let result = manually_map_module(file_content_ptr, clean_dos_header)?;
 
-    let result = manually_map_module(file_content_ptr, clean_headers)?;
+    unsafe 
+    {
+        for i in 0..file_content.len()
+        {
+            *(file_content_ptr.add(i)) = 0u8;
+        }
 
-    Ok(result)
+        Ok(result)
+    }
 }
 
 /// Manually maps a PE into the current process.
@@ -72,7 +80,7 @@ pub fn read_and_map_module (filepath: &str, clean_headers: bool) -> Result<(PeMe
 /// let file_content_ptr = file_content.as_ptr();
 /// let result = manualmap::manually_map_module(file_content_ptr, true);
 /// ```
-pub fn manually_map_module (file_ptr: *const u8, clean_headers: bool) -> Result<(PeMetadata,isize), String> 
+pub fn manually_map_module (file_ptr: *const u8, clean_dos_headers: bool) -> Result<(PeMetadata,isize), String> 
 {
     let pe_info = get_pe_metadata(file_ptr)?;
     if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) 
@@ -115,7 +123,7 @@ pub fn manually_map_module (file_ptr: *const u8, clean_headers: bool) -> Result<
 
         rewrite_module_iat(&pe_info, image_ptr)?;
 
-        if clean_headers
+        if clean_dos_headers
         {
             clean_dos_header(image_ptr);
         }
@@ -123,6 +131,8 @@ pub fn manually_map_module (file_ptr: *const u8, clean_headers: bool) -> Result<
         set_module_section_permissions(&pe_info, image_ptr)?;
 
         add_runtime_table(&pe_info, image_ptr);
+
+        run_tls_callbacks(&pe_info, image_ptr);
 
         Ok((pe_info,image_ptr as isize))
 
@@ -155,6 +165,7 @@ pub fn get_runtime_table(image_ptr: *mut c_void) -> (*mut data::RuntimeFunction,
                 let base = image_ptr as isize;
                 runtime = std::mem::transmute(base + section.VirtualAddress as isize);
                 size = section.SizeOfRawData;
+                break;
             }
         }
 
@@ -182,8 +193,8 @@ pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String>
 {
     let mut pe_metadata= PeMetadata::default();
 
-    unsafe {
-
+    unsafe 
+    {
         let e_lfanew = *((module_ptr as usize + 0x3C) as *const u32);
         pe_metadata.pe = *((module_ptr as usize + e_lfanew as usize) as *const u32);
 
@@ -682,6 +693,42 @@ pub fn set_module_section_permissions(pe_info: &PeMetadata, image_ptr: *mut c_vo
         }
 
         Ok(())
+    } 
+}
+
+/// Executes any registered TLS Callback function.
+///
+/// The parameters required are the module's metadata information and a
+/// pointer to the base address where the module is mapped in memory.
+pub fn run_tls_callbacks(pe_info: &PeMetadata, image_ptr: *mut c_void) 
+{
+    unsafe 
+    {   
+        let entry_point;
+        if pe_info.is_32_bit 
+        {
+            entry_point = image_ptr as isize + pe_info.opt_header_32.AddressOfEntryPoint as isize;
+        }
+        else 
+        {
+            entry_point = image_ptr as isize + pe_info.opt_header_64.address_of_entry_point as isize;
+
+        }
+
+        if pe_info.opt_header_64.number_of_rva_and_sizes >= 10
+        {
+            let address: *mut u8 = (image_ptr as usize + pe_info.opt_header_64.datas_directory[9].VirtualAddress as usize) as *mut u8;
+            let address_of_tls_callback = address.add(24) as *mut usize;
+            let mut address_of_tls_callback_array: *mut usize = std::mem::transmute(*address_of_tls_callback);
+            
+            while *address_of_tls_callback_array != 0
+            {
+                let tls_callback: extern "system" fn (isize, u32, PVOID) = std::mem::transmute(*address_of_tls_callback_array);
+                tls_callback(entry_point, 1, ptr::null_mut());
+                address_of_tls_callback_array = address_of_tls_callback_array.add(1);
+            }
+        }
+        
     } 
 }
 
