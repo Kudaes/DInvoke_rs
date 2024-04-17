@@ -7,30 +7,48 @@ use std::mem::size_of;
 use std::panic;
 use std::{collections::HashMap, ptr};
 use std::ffi::CString;
+#[cfg(target_arch = "x86_64")]
 use nanorand::{WyRand, Rng};
+#[cfg(target_arch = "x86_64")]
 use windows::Win32::System::Diagnostics::Debug::{GetThreadContext,SetThreadContext};
 use windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION;
 use windows::Win32::System::SystemInformation::SYSTEM_INFO;
 use windows::Win32::System::Threading::PROCESS_BASIC_INFORMATION;
 use windows::Win32::System::IO::IO_STATUS_BLOCK;
 use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
+#[cfg(target_arch = "x86_64")]
 use windows::Win32::{Foundation::{HANDLE, HINSTANCE,UNICODE_STRING}, System::Threading::{GetCurrentProcess,GetCurrentThread}};
-use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, ExceptionHandleFunction, ExceptionPointers, LptopLevelExceptionFilter, NtAllocateVirtualMemoryArgs, NtCreateThreadExArgs, NtOpenProcessArgs, NtProtectVirtualMemoryArgs, NtWriteVirtualMemoryArgs, PeMetadata, PsAttributeList, PsCreateInfo, CONTEXT, DLL_PROCESS_ATTACH, EAT, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_READONLY, PAGE_READWRITE, PROCESS_QUERY_LIMITED_INFORMATION, PVOID, TLS_OUT_OF_INDEXES};
+#[cfg(target_arch = "x86")]
+use windows::Win32::{Foundation::{HANDLE, HINSTANCE,UNICODE_STRING}, System::Threading::GetCurrentProcess};
+#[cfg(target_arch = "x86_64")]
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, ExceptionHandleFunction, ExceptionPointers, LptopLevelExceptionFilter, NtAllocateVirtualMemoryArgs, NtCreateThreadExArgs, NtOpenProcessArgs, NtProtectVirtualMemoryArgs, NtWriteVirtualMemoryArgs, PeMetadata, PsAttributeList, PsCreateInfo, CONTEXT, DLL_PROCESS_ATTACH, EAT, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PROCESS_QUERY_LIMITED_INFORMATION, PVOID, TLS_OUT_OF_INDEXES};
+#[cfg(target_arch = "x86")]
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, LptopLevelExceptionFilter, PeMetadata, PsAttributeList, PsCreateInfo, DLL_PROCESS_ATTACH, EAT, PAGE_EXECUTE_READWRITE, PVOID, TLS_OUT_OF_INDEXES};
 use libc::c_void;
 use litcrypt2::lc;
 use winproc::Process;
 use winapi::shared::ntdef::LARGE_INTEGER;
 
+#[cfg(target_arch = "x86_64")]
 static mut HARDWARE_BREAKPOINTS: bool = false;
+#[cfg(target_arch = "x86_64")]
 static mut HARDWARE_EXCEPTION_FUNCTION: ExceptionHandleFunction = ExceptionHandleFunction::NtOpenProcess;
+#[cfg(target_arch = "x86_64")]
 static mut NT_ALLOCATE_VIRTUAL_MEMORY_ARGS: NtAllocateVirtualMemoryArgs = NtAllocateVirtualMemoryArgs{handle: HANDLE {0: -1}, base_address: ptr::null_mut()};
+#[cfg(target_arch = "x86_64")]
 static mut NT_OPEN_PROCESS_ARGS: NtOpenProcessArgs = NtOpenProcessArgs{handle: ptr::null_mut(), access:0, attributes: ptr::null_mut(), client_id: ptr::null_mut()};
+#[cfg(target_arch = "x86_64")]
 static mut NT_PROTECT_VIRTUAL_MEMORY_ARGS: NtProtectVirtualMemoryArgs = NtProtectVirtualMemoryArgs{handle: HANDLE {0: -1}, base_address: ptr::null_mut(), size: ptr::null_mut(), protection: 0};
+#[cfg(target_arch = "x86_64")]
 static mut NT_WRITE_VIRTUAL_MEMORY_ARGS: NtWriteVirtualMemoryArgs = NtWriteVirtualMemoryArgs{handle: HANDLE {0: -1}, base_address: ptr::null_mut(), buffer: ptr::null_mut(), size: 0usize};
+#[cfg(target_arch = "x86_64")]
 static mut NT_CREATE_THREAD_EX_ARGS: NtCreateThreadExArgs = NtCreateThreadExArgs{thread:ptr::null_mut(), access: 0, attributes: ptr::null_mut(), process: HANDLE {0: -1}};
+static mut HOOKED_FUNCTIONS_INFO: Vec<(usize,Vec<u8>)> = vec![];
+
 
 /// Enables or disables the use of exception handlers in
 /// combination with hardware breakpoints.
+#[cfg(target_arch = "x86_64")]
 pub fn use_hardware_breakpoints(value: bool)
 {
     unsafe
@@ -48,7 +66,7 @@ pub fn use_hardware_breakpoints(value: bool)
 /// let nt_open_process = dinvoke::get_function_address(ntdll, "NtOpenProcess");
 /// let instruction_addr = dinvoke::find_syscall_address(nt_open_process);
 /// dinvoke::set_hardware_breakpoint(instruction_addr);
-/// ```
+#[cfg(target_arch = "x86_64")]
 pub fn set_hardware_breakpoint(address: usize) 
 {
     unsafe
@@ -76,6 +94,7 @@ pub fn set_hardware_breakpoint(address: usize)
 ///
 /// Whenever the HB gets triggered, this function will be executed. This is meant to be used in order
 /// to spoof syscalls parameters.
+#[cfg(target_arch = "x86_64")]
 pub unsafe extern "system" fn breakpoint_handler (exceptioninfo: *mut ExceptionPointers) -> i32
 {
     if (*(*(exceptioninfo)).exception_record).ExceptionCode.0 as u32 == 0x80000004 // STATUS_SINGLE_STEP
@@ -129,6 +148,150 @@ pub unsafe extern "system" fn breakpoint_handler (exceptioninfo: *mut ExceptionP
         return -1; // EXCEPTION_CONTINUE_EXECUTION
     }
     0 // EXCEPTION_CONTINUE_SEARCH
+}
+
+pub fn hook_function(src_address: usize, dst_address: usize) -> bool
+{
+    unsafe 
+    {
+        let original_address = src_address;
+        let handle = HANDLE(-1);
+        let base_address: *mut PVOID = std::mem::transmute(&original_address);
+        let size = 4096 as usize; 
+        let size: *mut usize = std::mem::transmute(&size);
+        let o = u32::default();
+        let old_protection: *mut u32 = std::mem::transmute(&o);
+
+        let z = nt_protect_virtual_memory( 
+            handle,
+            base_address,
+            size,
+            PAGE_EXECUTE_READWRITE,
+            old_protection
+        );
+
+        if z != 0 {
+            return false;
+        }
+
+        let ntop_ptr = src_address as *mut u8;
+        let mut original_bytes: Vec<u8> = vec![]; 
+        if cfg!(target_pointer_width = "64") 
+        {
+            for i in 0..=12
+            {
+                let b = *(ntop_ptr.add(i));
+                original_bytes.push(b);
+            }
+
+            *ntop_ptr = 0x49;
+            *(ntop_ptr.add(1)) = 0xBB;
+            *(ntop_ptr.add(2) as *mut usize) = dst_address;
+            *(ntop_ptr.add(10)) = 0x41;
+            *(ntop_ptr.add(11)) = 0xFF;
+            *(ntop_ptr.add(12)) = 0xE3;
+        } 
+        else 
+        {
+            for i in 0..=5
+            {
+                let b = *(ntop_ptr.add(i));
+                original_bytes.push(b);
+            }
+
+            *ntop_ptr = 0x68;
+            *(ntop_ptr.add(1) as *mut usize) = dst_address;
+            *(ntop_ptr.add(5)) = 0xC3
+        } 
+
+        HOOKED_FUNCTIONS_INFO.push((src_address, original_bytes));
+
+        let u = 0u32;
+        let unused: *mut u32 = std::mem::transmute(&u);
+
+        let z = nt_protect_virtual_memory(
+            handle,
+            base_address,
+            size,
+            *old_protection,
+            unused
+        );
+
+        if z != 0 {
+            return false;
+        }
+
+        true
+    }
+}
+
+pub fn unhook_function(address: usize) -> bool
+{
+    unsafe
+    {
+        let mut unhook_info = (0, vec![]);
+        let mut index = 0;
+        for (i, element) in HOOKED_FUNCTIONS_INFO.iter().enumerate()
+        {
+            println!("{:x} {:x}", element.0, address);
+            if element.0 == address 
+            {
+                unhook_info = (element.0,element.1.to_vec());
+                index = i;
+            }
+        }
+
+        if unhook_info.0 == 0 {
+            return false;
+        }
+
+        let original_address = unhook_info.0;
+        let handle = HANDLE(-1);
+        let base_address: *mut PVOID = std::mem::transmute(&original_address);
+        let size = 4096 as usize;   
+        let size: *mut usize = std::mem::transmute(&size);
+        let o = u32::default();
+        let old_protection: *mut u32 = std::mem::transmute(&o);
+
+        let z = nt_protect_virtual_memory( 
+            handle,
+            base_address,
+            size,
+            PAGE_EXECUTE_READWRITE,
+            old_protection
+        );
+
+        if z != 0 {
+            return false;
+        }
+
+        let ptr = unhook_info.0 as *mut u8;
+        for i in 0..unhook_info.1.len()
+        {
+            let addr = ptr.add(i);
+            *addr = unhook_info.1[i];
+        }
+
+        let u = 0u32;
+        let unused: *mut u32 = std::mem::transmute(&u);
+
+        let z = nt_protect_virtual_memory(
+            handle,
+            base_address,
+            size,
+            *old_protection,
+            unused
+        );
+
+        if z != 0 {
+            return false;
+        }
+
+        HOOKED_FUNCTIONS_INFO.remove(index);
+
+        true
+    }
+
 }
 
 /// Retrieves the base address of a module loaded in the current process.
@@ -187,7 +350,7 @@ pub fn get_function_address(module_base_address: isize, function: &str) -> isize
     unsafe
     {
         
-        let mut function_ptr:*mut i32 = ptr::null_mut();
+        let mut function_ptr: *mut i32 = ptr::null_mut();
         let pe_header = *((module_base_address + 0x3C) as *mut i32);
         let opt_header: isize = module_base_address + (pe_header as isize) + 0x18;
         let magic = *(opt_header as *mut i16);
@@ -633,6 +796,7 @@ pub fn find_syscall_address(address: usize) -> usize
 ///     }
 /// }
 /// ```
+#[cfg(target_arch = "x86_64")]
 pub fn prepare_syscall(id: u32, eat: EAT) -> isize {
 
     let mut sh: [u8;21] = 
@@ -771,12 +935,10 @@ pub fn prepare_syscall(id: u32, eat: EAT) -> isize {
 pub fn call_module_entry_point(pe_info: PeMetadata, module_base_address: isize) -> Result<(), String> {
 
     let entry_point;
-    if pe_info.is_32_bit 
-    {
+    if pe_info.is_32_bit {
         entry_point = module_base_address + pe_info.opt_header_32.AddressOfEntryPoint as isize;
     }
-    else 
-    {
+    else {
         entry_point = module_base_address + pe_info.opt_header_64.address_of_entry_point as isize;
 
     }
@@ -787,8 +949,7 @@ pub fn call_module_entry_point(pe_info: PeMetadata, module_base_address: isize) 
         let module = HINSTANCE {0: entry_point as isize};
         let ret = main(module, DLL_PROCESS_ATTACH, ptr::null_mut());
 
-        if !ret.as_bool()
-        {
+        if !ret.as_bool() {
             return Err(lc!("[x] Failed to call module's entry point (DllMain -> DLL_PROCESS_ATTACH)."));
         }
 
@@ -817,10 +978,9 @@ pub fn call_module_entry_point(pe_info: PeMetadata, module_base_address: isize) 
 ///     }
 /// }
 /// ```
-pub fn get_function_address_by_ordinal(module_base_address: isize, ordinal: u32) -> isize {
-
+pub fn get_function_address_by_ordinal(module_base_address: isize, ordinal: u32) -> isize 
+{
     let ret = ldr_get_procedure_address(module_base_address, "", ordinal);
-
     ret    
 }
 
@@ -1275,6 +1435,7 @@ pub fn nt_create_user_process(process_handle: *mut HANDLE, thread_handle: *mut H
 /// Dynamically calls NtWriteVirtualMemory.
 ///
 /// It will return the NTSTATUS value returned by the call.
+#[cfg(target_arch = "x86_64")]
 pub fn nt_write_virtual_memory (mut handle: HANDLE, base_address: PVOID, mut buffer: PVOID, mut size: usize, bytes_written: *mut usize) -> i32 {
 
     unsafe 
@@ -1309,9 +1470,28 @@ pub fn nt_write_virtual_memory (mut handle: HANDLE, base_address: PVOID, mut buf
 
 }
 
+#[cfg(target_arch = "x86")]
+pub fn nt_write_virtual_memory (handle: HANDLE, base_address: PVOID, buffer: PVOID, size: usize, bytes_written: *mut usize) -> i32 {
+
+    unsafe 
+    {
+        let ret;
+        let func_ptr: data::NtWriteVirtualMemory;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtWriteVirtualMemory"),func_ptr,ret,handle,base_address,buffer,size,bytes_written);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    }
+
+}
+
 /// Dynamically calls NtAllocateVirtualMemory.
 ///
 /// It will return the NTSTATUS value returned by the call.
+#[cfg(target_arch = "x86_64")]
 pub fn nt_allocate_virtual_memory (mut handle: HANDLE, mut base_address: *mut PVOID, zero_bits: usize, size: *mut usize, allocation_type: u32, protection: u32) -> i32 {
 
     unsafe 
@@ -1341,9 +1521,27 @@ pub fn nt_allocate_virtual_memory (mut handle: HANDLE, mut base_address: *mut PV
     }   
 }
 
+#[cfg(target_arch = "x86")]
+pub fn nt_allocate_virtual_memory (handle: HANDLE, base_address: *mut PVOID, zero_bits: usize, size: *mut usize, allocation_type: u32, protection: u32) -> i32 {
+
+    unsafe 
+    {
+        let ret;
+        let func_ptr: data::NtAllocateVirtualMemory;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtAllocateVirtualMemory"),func_ptr,ret,handle,base_address,zero_bits,size,allocation_type,protection);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    }   
+}
+
 /// Dynamically calls NtProtectVirtualMemory.
 ///
 /// It will return the NTSTATUS value returned by the call.
+#[cfg(target_arch = "x86_64")]
 pub fn nt_protect_virtual_memory (mut handle: HANDLE, mut base_address: *mut PVOID, mut size: *mut usize, mut new_protection: u32, old_protection: *mut u32) -> i32 {
     
     unsafe 
@@ -1378,9 +1576,27 @@ pub fn nt_protect_virtual_memory (mut handle: HANDLE, mut base_address: *mut PVO
     } 
 }
 
+#[cfg(target_arch = "x86")]
+pub fn nt_protect_virtual_memory (handle: HANDLE, base_address: *mut PVOID, size: *mut usize, new_protection: u32, old_protection: *mut u32) -> i32 {
+    
+    unsafe 
+    {
+        let ret;
+        let func_ptr: data::NtProtectVirtualMemory;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtProtectVirtualMemory"),func_ptr,ret,handle,base_address,size,new_protection,old_protection);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    } 
+}
+
 /// Dynamically calls NtOpenProcess.
 ///
 /// It will return the NTSTATUS value returned by the call.
+#[cfg(target_arch = "x86_64")]
 pub fn nt_open_process (mut handle: *mut HANDLE, mut access: u32, mut attributes: *mut OBJECT_ATTRIBUTES, mut client_id: *mut ClientId) -> i32 {
     
     unsafe 
@@ -1417,6 +1633,22 @@ pub fn nt_open_process (mut handle: *mut HANDLE, mut access: u32, mut attributes
     } 
 }
 
+#[cfg(target_arch = "x86")]
+pub fn nt_open_process (handle: *mut HANDLE, access: u32, attributes: *mut OBJECT_ATTRIBUTES, client_id: *mut ClientId) -> i32 {
+    
+    unsafe 
+    {
+        let ret;
+        let func_ptr: data::NtOpenProcess;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtOpenProcess"),func_ptr,ret,handle,access,attributes,client_id);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    } 
+}
 
 /// Dynamically calls NtQueryInformationProcess.
 ///
@@ -1568,6 +1800,7 @@ pub fn nt_map_view_of_section (section_handle: HANDLE, process_handle: HANDLE, b
 /// Dynamically calls NtCreateThreadEx.
 ///
 /// It will return the NTSTATUS value returned by the call.
+#[cfg(target_arch = "x86_64")]
 pub fn nt_create_thread_ex (mut thread: *mut HANDLE, mut access: u32, mut attributes: *mut OBJECT_ATTRIBUTES, mut process: HANDLE, function: PVOID, 
     args: PVOID, flags: u32, zero: usize, stack: usize, reserve: usize, buffer: *mut PsAttributeList) -> i32
 {
@@ -1595,6 +1828,24 @@ pub fn nt_create_thread_ex (mut thread: *mut HANDLE, mut access: u32, mut attrib
             process = HANDLE {0: -1};
         }
 
+        dynamic_invoke!(ntdll,&lc!("NtCreateThreadEx"),func_ptr,ret,thread,access,attributes,process,function,args,flags,zero,stack,reserve,buffer);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    }
+}
+
+#[cfg(target_arch = "x86")]
+pub fn nt_create_thread_ex (thread: *mut HANDLE, access: u32, attributes: *mut OBJECT_ATTRIBUTES, process: HANDLE, function: PVOID, 
+    args: PVOID, flags: u32, zero: usize, stack: usize, reserve: usize, buffer: *mut PsAttributeList) -> i32
+{
+    unsafe 
+    {
+        let ret: Option<i32>;
+        let func_ptr: data::NtCreateThreadEx;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
         dynamic_invoke!(ntdll,&lc!("NtCreateThreadEx"),func_ptr,ret,thread,access,attributes,process,function,args,flags,zero,stack,reserve,buffer);
 
         match ret {
@@ -1740,6 +1991,7 @@ macro_rules! dynamic_invoke {
 ///     None => println!("Error executing direct syscall for NtQueryInformationProcess."),
 /// }
 /// ```
+#[cfg(target_arch = "x86_64")]
 #[macro_export]
 macro_rules! execute_syscall {
 

@@ -54,6 +54,7 @@ pub type BCryptEncrypt = unsafe extern "system" fn (HANDLE, *mut u8, u32, PVOID,
 pub type BCryptDestroyKey = unsafe extern "system" fn (HANDLE) -> i32;
 pub type BCryptDecrypt = unsafe extern "system" fn (HANDLE, *mut u8, u32, PVOID, *mut u8, u32, *mut u8, u32, *mut u32, u32) -> i32;
 pub type BCryptCloseAlgorithmProvider  = unsafe extern "system" fn (HANDLE, u32) -> i32;
+pub type CryptSignHashW = unsafe extern "system" fn (usize, u32, *mut u16, u32, *mut u8, *mut u32) -> bool;
 pub type CreateEventW = unsafe extern "system" fn (*const SECURITY_ATTRIBUTES, i32, i32, *const u16) -> HANDLE;
 pub type LdrGetProcedureAddress = unsafe extern "system" fn (PVOID, *mut String, u32, *mut PVOID) -> i32;
 pub type NtWriteVirtualMemory = unsafe extern "system" fn (HANDLE, PVOID, PVOID, usize, *mut usize) -> i32;

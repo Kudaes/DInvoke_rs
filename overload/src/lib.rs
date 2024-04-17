@@ -640,8 +640,8 @@ pub fn prepare_template(input_file: &str, output_directory: &str) -> Result<(), 
                 let size: usize = section.SizeOfRawData as usize;                
                 copy_nonoverlapping(first_buffer.as_ptr() as *const u8, text_base_address as *mut u8, size);
 
-                let dll_main_template = 214404767416760usize; // mov eax, 1; ret;
-                let entrypoint_addr = (dll_content_buffer as usize + section.PointerToRawData as usize + entrypoint_rva as usize) as *mut usize;
+                let dll_main_template = 214404767416760u64; // mov eax, 1; ret;
+                let entrypoint_addr = (dll_content_buffer as usize + section.PointerToRawData as usize + entrypoint_rva as usize) as *mut u64;
                 *entrypoint_addr = dll_main_template;
 
                 let callback_template = 0xc3 as u8; // ret
