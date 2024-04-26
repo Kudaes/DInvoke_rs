@@ -391,7 +391,7 @@ let _r = manager.hide_shellcode(overload.1).unwrap(); // We hide the shellcode a
 ## Template stomping
 Template stomping is a derivative of the module stomping technique tailored specifically for DLLs. Right now this technique only allows to load a DLL into the current process, remote processes are not supported.
 
-The main objective is to create a template from a DLL by replacing the content of the `.text` section with arbitrary data, allowing to write the template on disk without raising alerts; this DLL is crafted in a way that it can be loaded into the process by calling `LoadLibrary`. Then, the original `.text` section content can be downloaded directly to the process' memory and stomped on the template's corresponding memory region. This technique can be effectively executed using two main functions: `generate_template` and `template_stomping`.
+The main objective is to create a template from a DLL by replacing the content of the `.text` section with arbitrary data, allowing to write the template on disk without raising alerts. This template is crafted in a way that it can be loaded into the process by calling `LoadLibrary`. Then, the original `.text` section content can be downloaded directly to the process' memory and stomped on the template's corresponding memory region. This technique can be effectively executed using two main functions: `generate_template` and `template_stomping`.
 
 The `generate_template` function is designed to create the template from the original DLL by extracting the `.text` section content  and replacing it with arbitrary data. This ensures that the template maintains its structure but contains no meaningful executable code, apart from the entry points and TLS callbacks, which are replaced with dummy but functional assembly instructions. The original `.text` section content is saved separately in `payload.bin`, and the final template file is saved in `template.dll`.
 
@@ -407,7 +407,7 @@ fn main ()
 }
 ```
 
-Then the template can be saved on disk on the target system and can be loaded with `LoadLibrary`. Once the template has been loaded into memory, the next step involves stomping the original executable content stored in `payload.bin` into the `.text` section of the template. This process is performed by the `template_stomping` function, which stomps the original executable content into the right memory region taking care of all the details involved in the process.
+Then the template can be saved on disk on the **target system** and can be loaded into the process by calling `LoadLibrary`. Once the template has been loaded by the SO, the next step involves stomping the original executable content stored in `payload.bin` into the `.text` section of the template. This process is performed by the `template_stomping` function, which stomps the original executable content into the right memory region taking care of all the details involved in the process.
 
 ```rust
 
@@ -426,4 +426,4 @@ fn main ()
 }
 ```
 
-This technique allows to load the DLL into disk backed memory regions without writing the real executable content to the filesystem (removing the need of private memory regions and evading EDR's static/dynamic analysis) and also allows to keep a clean call stack during the execution of the DLL's code, unlike what happens when we load a DLL reflectively.
+This technique allows to load a DLL into disk backed memory regions without writing the real executable content to the filesystem (removing the need of private memory regions and evading EDR's static/dynamic analysis) and also allows to keep a clean call stack during the execution of the DLL's code, unlike what happens when we load a DLL reflectively.
