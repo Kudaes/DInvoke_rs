@@ -1,5 +1,5 @@
 use std::{collections::BTreeMap, ffi::c_void};
-use windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, UNICODE_STRING}, Security::SECURITY_ATTRIBUTES, System::{Diagnostics::Debug::{IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, MINIDUMP_CALLBACK_INFORMATION, MINIDUMP_EXCEPTION_INFORMATION, MINIDUMP_USER_STREAM_INFORMATION, EXCEPTION_RECORD}, IO::{OVERLAPPED,IO_STATUS_BLOCK}, SystemInformation::SYSTEM_INFO, Memory::MEMORY_BASIC_INFORMATION, Threading::{STARTUPINFOW, PROCESS_INFORMATION}}};
+use windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, UNICODE_STRING}, Graphics::Printing::{DOC_INFO_1A, PRINTER_DEFAULTSA}, Security::SECURITY_ATTRIBUTES, System::{Diagnostics::Debug::{EXCEPTION_RECORD, IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, MINIDUMP_CALLBACK_INFORMATION, MINIDUMP_EXCEPTION_INFORMATION, MINIDUMP_USER_STREAM_INFORMATION}, Memory::MEMORY_BASIC_INFORMATION, SystemInformation::SYSTEM_INFO, Threading::{PROCESS_INFORMATION, STARTUPINFOW}, WindowsProgramming::CLIENT_ID, IO::{IO_STATUS_BLOCK, OVERLAPPED}}};
 use windows::core::PSTR;
 use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use winapi::shared::ntdef::LARGE_INTEGER;
@@ -11,6 +11,10 @@ pub type EntryPoint = extern "system" fn (HINSTANCE, u32, *mut c_void) -> BOOL;
 pub type LoadLibraryA = unsafe extern "system" fn (PSTR) -> HINSTANCE;
 pub type FreeLibrary = unsafe extern "system" fn (isize) -> HINSTANCE;
 pub type OpenProcess = unsafe extern "system" fn (u32, i32, u32) -> HANDLE;
+pub type OpenThread = unsafe extern "system" fn (u32, i32, u32) -> HANDLE;
+pub type OpenPrintA = unsafe extern "system" fn (*mut u8, *mut HANDLE, *mut PRINTER_DEFAULTSA) -> BOOL;
+pub type StartDocPrinterA = unsafe extern "system" fn (HANDLE, u32, *mut DOC_INFO_1A) -> u32;
+pub type GetDefaultPrinterA = unsafe extern "system" fn (*mut u8, *mut u32) -> BOOL;
 pub type EnumProcesses = unsafe extern "system" fn (*mut u32, u32, *mut u32) -> bool;
 pub type QueueUserWorkItem = unsafe extern "system" fn (*mut c_void, *mut c_void, u32) -> bool;
 pub type InitializeProcThreadAttributeList = unsafe extern "system" fn (PVOID, u32, u32, *mut usize) -> BOOL;
@@ -20,6 +24,7 @@ pub type MiniDumpWriteDump = unsafe extern "system" fn (HANDLE, u32, HANDLE, u32
     *mut MINIDUMP_USER_STREAM_INFORMATION, *mut MINIDUMP_CALLBACK_INFORMATION) -> i32;
 pub type GetOverlappedResult = unsafe extern "system" fn (HANDLE, *mut OVERLAPPED, *mut u32, bool) -> BOOL;
 pub type CreateFileA = unsafe extern "system" fn (*mut u8, u32, u32, *const SECURITY_ATTRIBUTES, u32, u32, HANDLE) -> HANDLE;
+pub type CreateFileW = unsafe extern "system" fn (*const u16, u32, u32, *const SECURITY_ATTRIBUTES, u32, u32, HANDLE) -> HANDLE;
 pub type ReadFile = unsafe extern "system" fn (HANDLE, PVOID, u32, *mut u32, *mut OVERLAPPED) -> i32; 
 pub type CreateTransaction = unsafe extern "system" fn (*mut SECURITY_ATTRIBUTES, *mut GUID, u32, u32, u32, u32, *mut u16) -> HANDLE;
 pub type CreateFileTransactedA = unsafe extern "system" fn (*mut u8, u32, u32, *const SECURITY_ATTRIBUTES, u32, u32, HANDLE,
@@ -593,4 +598,21 @@ pub union PsCreateInfoU {
     pub dll_characteristics: u16,
     pub ifeokey: HANDLE,
     pub success_state: PsCreateInfoUSuccessSate,
+}
+
+#[repr(C)]
+pub struct FileProcessIdsUsingFileInformation {
+    pub number_of_process_ids_in_list: u32,
+    pub process_id_list: [usize;1],
+}
+
+#[repr(C)]
+pub struct ThreadBasicInformation {
+    pub exit_status: i32,
+    pub teb_base_address: PVOID,
+    pub client_id: CLIENT_ID,
+    pub affinity_mask: usize,
+    pub priority: i32,
+    pub base_priority: i32,
+
 }

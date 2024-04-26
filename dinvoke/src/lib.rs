@@ -150,6 +150,46 @@ pub unsafe extern "system" fn breakpoint_handler (exceptioninfo: *mut ExceptionP
     0 // EXCEPTION_CONTINUE_SEARCH
 }
 
+/// Inserts an inline hook at a specified source memory address to redirect execution flow to a
+/// destination memory address. This function is used to hook a function and redirect its execution
+/// to a custom handler.
+///
+/// # Arguments
+///
+/// * `src_address` - The source memory address where the inline hook will be inserted.
+///   This should be the starting address of the function to be hooked.
+/// * `dst_address` - The destination memory address where the execution will be redirected.
+///   This is typically the address of the hook handler function.
+///
+/// # Returns
+///
+/// Returns `true` if the hook is successfully inserted, `false` otherwise.
+///
+/// # Side Effects
+///
+/// If the hook is successfully established, the information regarding the new hook is stored,
+/// allowing it to be easily removed later by calling the `unhook_function`.
+///
+/// # Example
+///
+/// ```
+/// fn main() {
+///     let kernelbase = dinvoke::get_module_base_address("kernelbase.dll");
+///     let load_addr = dinvoke::get_function_address(kernelbase, "LoadLibraryA");
+///     let hook_result = dinvoke::hook_function(load_addr as _, load_library_handler as *const () as _);
+///
+///     if hook_result {
+///         println!("Hook inserted successfully.");
+///     } else {
+///         println!("Failed to insert hook.");
+///     }
+/// }
+/// 
+/// fn load_library_handler(library_name:*mut u8) -> isize
+/// {
+///     DoStuff();
+/// }
+/// ```
 pub fn hook_function(src_address: usize, dst_address: usize) -> bool
 {
     unsafe 
@@ -225,6 +265,32 @@ pub fn hook_function(src_address: usize, dst_address: usize) -> bool
     }
 }
 
+/// Removes an inline hook previously inserted by `hook_function` at a specified memory address.
+/// This function checks if the hook exists at the given address and, if so, removes it by restoring
+/// the original content that was replaced during the hooking process.
+///
+/// # Arguments
+///
+/// * `address` - The memory address where the hook is supposedly located.
+///
+/// # Returns
+///
+/// Returns `true` if the hook was successfully found and removed, `false` otherwise.
+///
+/// # Example
+///
+/// ```
+/// fn main() {
+///     let hook_address: usize = 0x123456;  // Example address where a hook might be located
+///
+///     let unhook_result = unhook_function(hook_address);
+///     if unhook_result {
+///         println!("Hook removed successfully.");
+///     } else {
+///         println!("Failed to remove hook.");
+///     }
+/// }
+/// ```
 pub fn unhook_function(address: usize) -> bool
 {
     unsafe
@@ -233,11 +299,11 @@ pub fn unhook_function(address: usize) -> bool
         let mut index = 0;
         for (i, element) in HOOKED_FUNCTIONS_INFO.iter().enumerate()
         {
-            println!("{:x} {:x}", element.0, address);
             if element.0 == address 
             {
                 unhook_info = (element.0,element.1.to_vec());
                 index = i;
+                break;
             }
         }
 
@@ -1223,6 +1289,38 @@ pub fn open_process(desired_access: u32, inherit_handle: i32, process_id: u32) -
 
 }
 
+/// Opens a HANDLE to a thread.
+///
+/// If the function fails, it will return a null HANDLE.
+///
+/// # Examples
+///
+/// ```
+/// let thread_id = 792u32;
+/// let handle = dinvoke::open_thread(0x0002, 0, pid); //THREAD_SUSPEND_RESUME access right.
+/// 
+/// if handle.0 != 0
+/// {
+///     println!("Handle to thread with id {} with THREAD_SUSPEND_RESUME access right successfully obtained.", thread_id);
+/// }
+/// ```
+pub fn open_thread(desired_access: u32, inherit_handle: i32, thread_id: u32) -> HANDLE {
+
+    unsafe 
+    {    
+        let ret: Option<HANDLE>;
+        let func_ptr: data::OpenThread;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("OpenThread"),func_ptr,ret,desired_access,inherit_handle,thread_id);
+
+        match ret {
+            Some(x) => return x,
+            None => return HANDLE::default(),
+        }
+    }
+
+}
+
 /// Closes a HANDLE object.
 ///
 /// It will return either a boolean value or an Err with a descriptive error message. If the function
@@ -1268,6 +1366,7 @@ pub fn close_handle(handle: HANDLE) -> bool {
     }
 }
 
+/// Dynamically calls TlsAlloc.
 pub fn tls_alloc() -> u32
 {
     unsafe 
@@ -1284,6 +1383,7 @@ pub fn tls_alloc() -> u32
     }
 }
 
+/// Dynamically calls TlsGetValue.
 pub fn tls_get_value(index: u32) -> PVOID
 {
     unsafe 
@@ -1300,6 +1400,7 @@ pub fn tls_get_value(index: u32) -> PVOID
     }
 }
 
+/// Dynamically calls TlsSetValue.
 pub fn tls_set_value(index: u32, data: PVOID) -> bool
 {
     unsafe 
@@ -1316,6 +1417,7 @@ pub fn tls_set_value(index: u32, data: PVOID) -> bool
     }
 }
 
+/// Dynamically calls GetModuleHandleExA.
 pub fn get_module_handle_ex_a(flags: i32, module_name: *const u8, module: *mut usize) -> bool
 {
     unsafe 
@@ -1332,6 +1434,7 @@ pub fn get_module_handle_ex_a(flags: i32, module_name: *const u8, module: *mut u
     }
 }
 
+/// Dynamically calls GetLastError.
 pub fn get_last_error() -> u32
 {
     unsafe 
@@ -1348,6 +1451,7 @@ pub fn get_last_error() -> u32
     }
 }
 
+/// Dynamically calls LocalAlloc.
 pub fn local_alloc(flags: u32, size: usize) -> PVOID
 {
     unsafe 
@@ -1365,7 +1469,6 @@ pub fn local_alloc(flags: u32, size: usize) -> PVOID
 }
 
 /// Dynamically calls GetSystemInfo.
-///
 pub fn get_system_info(sysinfo: *mut SYSTEM_INFO)  {
     
     unsafe 
@@ -1378,7 +1481,6 @@ pub fn get_system_info(sysinfo: *mut SYSTEM_INFO)  {
 }
 
 /// Dynamically calls VirtualQueryEx.
-///
 pub fn virtual_query_ex(process_handle: HANDLE, page_address: *const c_void, buffer: *mut MEMORY_BASIC_INFORMATION, length: usize)  -> usize{
     
     unsafe 
@@ -1414,6 +1516,9 @@ pub fn virtual_free(address: PVOID, size: usize, free_type: u32) -> bool {
     }
 }
 
+/// Dynamically calls NtCreateUserProcess.
+///
+/// It will return the NTSTATUS value returned by the call.
 pub fn nt_create_user_process(process_handle: *mut HANDLE, thread_handle: *mut HANDLE, process_access: u32, thread_access: u32, object_attributes: *mut OBJECT_ATTRIBUTES,
     thread_object_attr: *mut OBJECT_ATTRIBUTES, process_flags: u32, thread_flags: u32, parameters: PVOID, create_info: *mut PsCreateInfo, attr_list: *mut PsAttributeList) -> i32 {
     
@@ -1470,6 +1575,9 @@ pub fn nt_write_virtual_memory (mut handle: HANDLE, base_address: PVOID, mut buf
 
 }
 
+/// Dynamically calls NtWriteVirtualMemory.
+///
+/// It will return the NTSTATUS value returned by the call.
 #[cfg(target_arch = "x86")]
 pub fn nt_write_virtual_memory (handle: HANDLE, base_address: PVOID, buffer: PVOID, size: usize, bytes_written: *mut usize) -> i32 {
 
@@ -1521,6 +1629,9 @@ pub fn nt_allocate_virtual_memory (mut handle: HANDLE, mut base_address: *mut PV
     }   
 }
 
+/// Dynamically calls NtAllocateVirtualMemory.
+///
+/// It will return the NTSTATUS value returned by the call.
 #[cfg(target_arch = "x86")]
 pub fn nt_allocate_virtual_memory (handle: HANDLE, base_address: *mut PVOID, zero_bits: usize, size: *mut usize, allocation_type: u32, protection: u32) -> i32 {
 
@@ -1576,6 +1687,9 @@ pub fn nt_protect_virtual_memory (mut handle: HANDLE, mut base_address: *mut PVO
     } 
 }
 
+/// Dynamically calls NtProtectVirtualMemory.
+///
+/// It will return the NTSTATUS value returned by the call.
 #[cfg(target_arch = "x86")]
 pub fn nt_protect_virtual_memory (handle: HANDLE, base_address: *mut PVOID, size: *mut usize, new_protection: u32, old_protection: *mut u32) -> i32 {
     
@@ -1633,6 +1747,9 @@ pub fn nt_open_process (mut handle: *mut HANDLE, mut access: u32, mut attributes
     } 
 }
 
+/// Dynamically calls NtOpenProcess.
+///
+/// It will return the NTSTATUS value returned by the call.
 #[cfg(target_arch = "x86")]
 pub fn nt_open_process (handle: *mut HANDLE, access: u32, attributes: *mut OBJECT_ATTRIBUTES, client_id: *mut ClientId) -> i32 {
     
@@ -1680,6 +1797,25 @@ pub fn nt_query_information_thread (handle: HANDLE, thread_information_class: u3
         let func_ptr: data::NtQueryInformationThread;
         let ntdll = get_module_base_address(&lc!("ntdll.dll"));
         dynamic_invoke!(ntdll,&lc!("NtQueryInformationThread"),func_ptr,ret,handle,thread_information_class,thread_information,length,return_length);
+
+        match ret {
+            Some(x) => return x,
+            None => return -1,
+        }
+    } 
+}
+
+/// Dynamically calls NtQueryInformationFile.
+///
+/// It will return the NTSTATUS value returned by the call.
+pub fn nt_query_information_file(handle: HANDLE, io: *mut IO_STATUS_BLOCK, file_information: PVOID, length: u32,file_information_class: u32) -> i32 {
+    
+    unsafe 
+    {
+        let ret;
+        let func_ptr: data::NtQueryInformationFile;
+        let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+        dynamic_invoke!(ntdll,&lc!("NtQueryInformationFile"),func_ptr,ret,handle,io,file_information,length,file_information_class);
 
         match ret {
             Some(x) => return x,
@@ -1837,6 +1973,9 @@ pub fn nt_create_thread_ex (mut thread: *mut HANDLE, mut access: u32, mut attrib
     }
 }
 
+/// Dynamically calls NtCreateThreadEx.
+///
+/// It will return the NTSTATUS value returned by the call.
 #[cfg(target_arch = "x86")]
 pub fn nt_create_thread_ex (thread: *mut HANDLE, access: u32, attributes: *mut OBJECT_ATTRIBUTES, process: HANDLE, function: PVOID, 
     args: PVOID, flags: u32, zero: usize, stack: usize, reserve: usize, buffer: *mut PsAttributeList) -> i32

