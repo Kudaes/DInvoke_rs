@@ -407,7 +407,7 @@ fn main ()
 }
 ```
 
-Then the template can be saved on disk on the **target system** and can be loaded into the process by calling `LoadLibrary`. Once the template has been loaded by the SO, the next step involves stomping the original executable content stored in `payload.bin` into the `.text` section of the template. This process is performed by the `template_stomping` function, which stomps the original executable content into the right memory region taking care of all the details involved in the process.
+Then the template can be saved on disk in the **target system** and can be loaded in the current process by calling `LoadLibrary`. Once the template has been loaded by the SO, the next step involves stomping the original executable content stored in `payload.bin` into the `.text` section of the template. This process is performed by the `template_stomping` function, which stomps the original executable content into the right memory region taking care of all the details involved in the process.
 
 ```rust
 
