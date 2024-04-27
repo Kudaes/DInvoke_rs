@@ -38,7 +38,7 @@ Import this crate into your project by adding the following line to your `cargo.
 
 ```rust
 [dependencies]
-dinvoke_rs = "0.1.4"
+dinvoke_rs = "0.1.5"
 ```
 
 # Examples
