@@ -1,15 +1,19 @@
 use std::{collections::BTreeMap, ffi::c_void};
-use windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, UNICODE_STRING}, Graphics::Printing::{DOC_INFO_1A, PRINTER_DEFAULTSA}, Security::SECURITY_ATTRIBUTES, System::{Diagnostics::Debug::{EXCEPTION_RECORD, IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, MINIDUMP_CALLBACK_INFORMATION, MINIDUMP_EXCEPTION_INFORMATION, MINIDUMP_USER_STREAM_INFORMATION}, Memory::MEMORY_BASIC_INFORMATION, SystemInformation::SYSTEM_INFO, Threading::{PROCESS_INFORMATION, STARTUPINFOW}, WindowsProgramming::CLIENT_ID, IO::{IO_STATUS_BLOCK, OVERLAPPED}}};
+use windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, UNICODE_STRING}, Graphics::Printing::{DOC_INFO_1A, PRINTER_DEFAULTSA}, Security::SECURITY_ATTRIBUTES, System::{Diagnostics::{Debug::{EXCEPTION_RECORD, IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, MINIDUMP_CALLBACK_INFORMATION, MINIDUMP_EXCEPTION_INFORMATION, MINIDUMP_USER_STREAM_INFORMATION}, ToolHelp::THREADENTRY32}, Memory::MEMORY_BASIC_INFORMATION, SystemInformation::SYSTEM_INFO, Threading::{PROCESS_INFORMATION, STARTUPINFOW}, WindowsProgramming::CLIENT_ID, IO::{IO_STATUS_BLOCK, OVERLAPPED}}};
 use windows::core::PSTR;
 use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use winapi::shared::ntdef::LARGE_INTEGER;
 
 pub type PVOID = *mut c_void;
 pub type DWORD = u32;
-pub type EAT = BTreeMap<isize,String>;
+pub type EAT = BTreeMap<usize,String>;
 pub type EntryPoint = extern "system" fn (HINSTANCE, u32, *mut c_void) -> BOOL;
 pub type LoadLibraryA = unsafe extern "system" fn (PSTR) -> HINSTANCE;
 pub type FreeLibrary = unsafe extern "system" fn (isize) -> HINSTANCE;
+pub type CreateToolhelp32Snapshot = unsafe extern "system" fn (u32, u32) -> HANDLE;
+pub type Thread32First = unsafe extern "system" fn (HANDLE, *mut THREADENTRY32) -> bool;
+pub type Thread32Next = unsafe extern "system" fn (HANDLE, *mut THREADENTRY32) -> bool;
+pub type PostThreadMessageA = unsafe extern "system" fn (u32, u32, usize, isize) -> bool;
 pub type OpenProcess = unsafe extern "system" fn (u32, i32, u32) -> HANDLE;
 pub type OpenThread = unsafe extern "system" fn (u32, i32, u32) -> HANDLE;
 pub type OpenPrintA = unsafe extern "system" fn (*mut u8, *mut HANDLE, *mut PRINTER_DEFAULTSA) -> BOOL;
@@ -85,7 +89,7 @@ pub type RtlAdjustPrivilege = unsafe extern "system" fn (u32, u8, u8, *mut u8) -
 pub type RtlInitUnicodeString = unsafe extern "system" fn (*mut UNICODE_STRING, *const u16) -> () ;
 pub type RtlZeroMemory = unsafe extern "system" fn (PVOID, usize) -> ();
 pub type RtlQueueWorkItem = unsafe extern "system" fn (usize, PVOID, u32) -> i32;
-pub type RtlAddFunctionTable = unsafe extern "system" fn (usize, i32, isize) -> bool;
+pub type RtlAddFunctionTable = unsafe extern "system" fn (usize, i32, usize) -> bool;
 
 pub const JMP_RBX: u16 = 9215;
 pub const ADD_RSP: u32 = 1489273672;// add rsp,0x58 -> up to 11 parameters
@@ -253,7 +257,7 @@ impl Default for CoffSymbol {
 #[repr(C)]
 pub struct PeManualMap {
     pub decoy_module: String,
-    pub base_address: isize,
+    pub base_address: usize,
     pub pe_info: PeMetadata,
 }
 

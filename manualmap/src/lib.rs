@@ -45,7 +45,7 @@ use litcrypt2::lc;
 ///     Err(e) => println!("{}", e),      
 /// }
 /// ```
-pub fn read_and_map_module (filepath: &str, clean_dos_header: bool) -> Result<(PeMetadata,isize), String> 
+pub fn read_and_map_module (filepath: &str, clean_dos_header: bool) -> Result<(PeMetadata,usize), String> 
 {
     let file_content = fs::read(filepath).expect(&lc!("[x] Error opening the specified file."));
     let file_content_ptr = file_content.as_ptr() as *mut _;
@@ -80,7 +80,7 @@ pub fn read_and_map_module (filepath: &str, clean_dos_header: bool) -> Result<(P
 /// let file_content_ptr = file_content.as_ptr();
 /// let result = manualmap::manually_map_module(file_content_ptr, true);
 /// ```
-pub fn manually_map_module (file_ptr: *const u8, clean_dos_headers: bool) -> Result<(PeMetadata,isize), String> 
+pub fn manually_map_module (file_ptr: *const u8, clean_dos_headers: bool) -> Result<(PeMetadata,usize), String> 
 {
     let pe_info = get_pe_metadata(file_ptr)?;
     if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) 
@@ -134,7 +134,7 @@ pub fn manually_map_module (file_ptr: *const u8, clean_dos_headers: bool) -> Res
 
         run_tls_callbacks(&pe_info, image_ptr);
 
-        Ok((pe_info,image_ptr as isize))
+        Ok((pe_info,image_ptr as usize))
 
     }
 
@@ -162,8 +162,9 @@ pub fn get_runtime_table(image_ptr: *mut c_void) -> (*mut data::RuntimeFunction,
             let s = std::str::from_utf8(&section.Name).unwrap();
             if s.contains(".pdata") 
             {
-                let base = image_ptr as isize;
-                runtime = std::mem::transmute(base + section.VirtualAddress as isize);
+                let base = image_ptr as usize;
+                let addr = base + section.VirtualAddress as usize;
+                runtime = std::mem::transmute(addr);
                 size = section.SizeOfRawData;
                 break;
             }
@@ -487,14 +488,14 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
                                 imp_by_name_ptr = imp_by_name_ptr.add(1);
                             }
 
-                            let func_ptr = dinvoke::get_function_address(module_handle as isize, &import_name);
+                            let func_ptr = dinvoke::get_function_address(module_handle, &import_name);
                             *ft_itd = func_ptr as i32;
 
                         }
                         else 
                         {
                             let f_ordinal = (image_thunk_data.u1.AddressOfData & 0xFFFF) as u32;
-                            let func_ptr = dinvoke::get_function_address_by_ordinal(module_handle as isize, f_ordinal);
+                            let func_ptr = dinvoke::get_function_address_by_ordinal(module_handle, f_ordinal);
                             let func_ptr = func_ptr as *mut i32;
                             *ft_itd = func_ptr as i32;
                         }
@@ -537,14 +538,14 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
                                 imp_by_name_ptr = imp_by_name_ptr.add(1);
                             }
 
-                            let func_ptr = dinvoke::get_function_address(module_handle as isize, &import_name) as *mut isize;
+                            let func_ptr = dinvoke::get_function_address(module_handle, &import_name) as *mut isize;
                             *ft_itd = func_ptr as isize;
                         }
                         else 
                         {
      
                             let f_ordinal = (image_thunk_data.u1.AddressOfData & 0xFFFF) as u32;
-                            let func_ptr = dinvoke::get_function_address_by_ordinal(module_handle as isize, f_ordinal);
+                            let func_ptr = dinvoke::get_function_address_by_ordinal(module_handle, f_ordinal);
                             *ft_itd = func_ptr as isize;
                         }
 
@@ -609,7 +610,7 @@ pub fn add_runtime_table(pe_info: &PeMetadata, image_ptr: *mut c_void)
                 let _ret: Option<bool>;                
                 let k32 = dinvoke::get_module_base_address(&lc!("kernel32.dll"));
                 let function_table_addr: usize = image_ptr as usize + section.VirtualAddress as usize;
-                dinvoke::dynamic_invoke!(k32,&lc!("RtlAddFunctionTable"),func,_ret,function_table_addr,entry_count,image_ptr as isize);
+                dinvoke::dynamic_invoke!(k32,&lc!("RtlAddFunctionTable"),func,_ret,function_table_addr,entry_count,image_ptr as usize);
             }
         }
     }
@@ -821,7 +822,7 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap,HANDLE),String>
 
         let base_address: *const u8 = std::mem::transmute(*base_address);
         let sec_object: PeManualMap = PeManualMap { pe_info : get_pe_metadata(base_address).unwrap(),
-                                                    base_address : base_address as isize, decoy_module: module_path};
+                                                    base_address : base_address as usize, decoy_module: module_path};
         
 
         let _r = dinvoke::close_handle(*hfile);
