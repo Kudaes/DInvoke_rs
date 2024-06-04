@@ -9,12 +9,12 @@ use nanorand::{Rng, BufferedRng, WyRand};
 
 pub struct Manager
 {
-    payloads: HashMap<isize, Vec<u8>>,
-    payloads_metadata: HashMap<isize, PeMetadata>,
-    decoys_metadata: HashMap<isize, PeMetadata>,
-    decoys: HashMap<isize, Vec<u8>>,
-    counter: HashMap<isize, i64>,
-    keys: HashMap<isize, u8>
+    payloads: HashMap<usize, Vec<u8>>,
+    payloads_metadata: HashMap<usize, PeMetadata>,
+    decoys_metadata: HashMap<usize, PeMetadata>,
+    decoys: HashMap<usize, Vec<u8>>,
+    counter: HashMap<usize, i64>,
+    keys: HashMap<usize, u8>
 }
 
 impl Manager {
@@ -29,7 +29,7 @@ impl Manager {
         }
     }
 
-    pub fn new_module (&mut self, address: isize, payload: Vec<u8>, decoy: Vec<u8>) -> Result<(), String>
+    pub fn new_module (&mut self, address: usize, payload: Vec<u8>, decoy: Vec<u8>) -> Result<(), String>
     {   
         if self.payloads.contains_key(&address)
         {
@@ -38,8 +38,8 @@ impl Manager {
 
         unsafe 
         {
-            let payload_metadata = manualmap::get_pe_metadata(payload.as_ptr())?;
-            let decoy_metadata = manualmap::get_pe_metadata(decoy.as_ptr())?;
+            let payload_metadata = manualmap::get_pe_metadata(payload.as_ptr(), false)?;
+            let decoy_metadata = manualmap::get_pe_metadata(decoy.as_ptr(), false)?;
 
             let mut rand_bytes = [0u8; 15];
             let mut rng = BufferedRng::new(WyRand::new());
@@ -71,7 +71,7 @@ impl Manager {
         Ok(())
     }
 
-    pub fn new_shellcode (&mut self, address: isize, payload: Vec<u8>, decoy: Vec<u8>) -> Result<(), String>
+    pub fn new_shellcode (&mut self, address: usize, payload: Vec<u8>, decoy: Vec<u8>) -> Result<(), String>
     {   
         if self.payloads.contains_key(&address)
         {
@@ -125,7 +125,7 @@ impl Manager {
         }
     }
 
-    pub fn map_module (&mut self, address: isize) -> Result<(),String>
+    pub fn map_module (&mut self, address: usize) -> Result<(),String>
     {
         unsafe
         {
@@ -182,7 +182,7 @@ impl Manager {
         }
     }
 
-    pub fn hide_module(&mut self, address: isize) -> Result<(),String>
+    pub fn hide_module(&mut self, address: usize) -> Result<(),String>
     {
         unsafe
         {
@@ -235,7 +235,7 @@ impl Manager {
         }
     }
 
-    pub fn hide_shellcode(&mut self, address: isize) -> Result<(),String>
+    pub fn hide_shellcode(&mut self, address: usize) -> Result<(),String>
     {
         if self.payloads.contains_key(&address)
         {
@@ -263,7 +263,7 @@ impl Manager {
         
     }
 
-    pub fn stomp_shellcode(&mut self, address: isize) -> Result<(),String>
+    pub fn stomp_shellcode(&mut self, address: usize) -> Result<(),String>
     {
         if self.payloads.contains_key(&address)
         {

