@@ -32,7 +32,7 @@ use litcrypt2::lc;
 /// If the clean_headers parameters is set to true, the mapped pe's dos header will be removed during the
 /// mapping process. Otherwise, the dos header will be kept untouched.
 /// 
-/// It will return either a pair (PeMetadata,isize) containing the mapped PE
+/// It will return either a pair (PeMetadata,usize) containing the mapped PE
 /// metadata and its base address or a String with a descriptive error message.
 ///
 /// # Examples
@@ -68,7 +68,7 @@ pub fn read_and_map_module (filepath: &str, clean_dos_header: bool) -> Result<(P
 /// If the clean_headers parameters is set to true, the mapped pe's dos header will be removed during the
 /// mapping process. Otherwise, the dos header will be kept untouched.
 /// 
-/// It will return either a pair (PeMetadata,isize) containing the mapped PE
+/// It will return either a pair (PeMetadata,usize) containing the mapped PE
 /// metadata and its base address or a String with a descriptive error message.
 ///
 /// # Examples
@@ -82,7 +82,7 @@ pub fn read_and_map_module (filepath: &str, clean_dos_header: bool) -> Result<(P
 /// ```
 pub fn manually_map_module (file_ptr: *const u8, clean_dos_headers: bool) -> Result<(PeMetadata,usize), String> 
 {
-    let pe_info = get_pe_metadata(file_ptr)?;
+    let pe_info = get_pe_metadata(file_ptr, false)?;
     if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) 
     {
         return Err(lc!("[x] The module architecture does not match the process architecture."));
@@ -148,7 +148,7 @@ pub fn get_runtime_table(image_ptr: *mut c_void) -> (*mut data::RuntimeFunction,
     unsafe 
     {
         let mut size: u32 = 0;
-        let module_metadata = get_pe_metadata(image_ptr as *const u8);
+        let module_metadata = get_pe_metadata(image_ptr as *const u8, false);
         if !module_metadata.is_ok()
         {
             return (ptr::null_mut(), size);
@@ -190,7 +190,7 @@ pub fn get_runtime_table(image_ptr: *mut c_void) -> (*mut data::RuntimeFunction,
 /// let file_content_ptr = file_content.as_ptr();
 /// let result = manualmap::get_pe_metadata(file_content_ptr);
 /// ```
-pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String>
+pub fn get_pe_metadata (module_ptr: *const u8, check_signature: bool) -> Result<PeMetadata,String>
 {
     let mut pe_metadata= PeMetadata::default();
 
@@ -199,7 +199,7 @@ pub fn get_pe_metadata (module_ptr: *const u8) -> Result<PeMetadata,String>
         let e_lfanew = *((module_ptr as usize + 0x3C) as *const u32);
         pe_metadata.pe = *((module_ptr as usize + e_lfanew as usize) as *const u32);
 
-        if pe_metadata.pe != 0x4550 
+        if pe_metadata.pe != 0x4550 && check_signature
         {
             return Err(lc!("[x] Invalid PE signature."));
         }
@@ -821,7 +821,7 @@ pub fn map_to_section(module_path: &str) -> Result<(PeManualMap,HANDLE),String>
         }
 
         let base_address: *const u8 = std::mem::transmute(*base_address);
-        let sec_object: PeManualMap = PeManualMap { pe_info : get_pe_metadata(base_address).unwrap(),
+        let sec_object: PeManualMap = PeManualMap { pe_info : get_pe_metadata(base_address, false).unwrap(),
                                                     base_address : base_address as usize, decoy_module: module_path};
         
 
