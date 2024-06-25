@@ -1183,7 +1183,7 @@ pub fn add_vectored_exception_handler(first: u32, address: usize) -> PVOID
     }
 }
 
-/// Loads and retrieves a module's base address by dynamically calling LoadLibraryA.
+/// Uses the Thread Pool to call LoadLibraryA.
 ///
 /// It will return either the module's base address or 0.
 ///
@@ -1194,7 +1194,7 @@ pub fn add_vectored_exception_handler(first: u32, address: usize) -> PVOID
 ///
 /// if ret != 0 {println!("ntdll.dll base address is 0x{:X}.", addr);
 /// ```
-pub fn load_library_a(module: &str) -> usize {
+pub fn load_library_a_tp(module: &str) -> usize {
 
     unsafe 
     {   
@@ -1225,6 +1225,36 @@ pub fn load_library_a(module: &str) -> usize {
                     return get_module_base_address(module);
                 }
             },
+            None => { return 0; }
+        }
+    }     
+}
+
+/// Dynamically calls LoadLibraryA.
+///
+/// It will return either the module's base address or 0.
+///
+/// # Examples
+///
+/// ```
+/// let ret = dinvoke::load_library_a("ntdll.dll");
+///
+/// if ret != 0 {println!("ntdll.dll base address is 0x{:X}.", addr);
+/// ```
+pub fn load_library_a(module: &str) -> usize {
+
+    unsafe 
+    {   
+        let ret: Option<usize>;
+        let func_ptr: data::LoadLibraryA;
+        let name = CString::new(module.to_string()).expect("");
+        let module_name: *mut u8 = std::mem::transmute(name.as_ptr());
+        let k32 = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(k32,&lc!("LoadLibraryA"),func_ptr,ret,module_name);
+
+        match ret
+        {
+            Some(x) => { return x; },
             None => { return 0; }
         }
     }     
