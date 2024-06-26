@@ -32,25 +32,27 @@ use litcrypt2::lc;
 /// If the clean_headers parameters is set to true, the mapped pe's dos header will be removed during the
 /// mapping process. Otherwise, the dos header will be kept untouched.
 /// 
+/// The third parameter determines whether TLS callbacks are executed (true) or not (false).
+/// 
 /// It will return either a pair (PeMetadata,usize) containing the mapped PE
 /// metadata and its base address or a String with a descriptive error message.
 ///
 /// # Examples
 ///
 /// ```
-/// let ntdll = manualmap::read_and_map_module("c:\\windows\\system32\\ntdll.dll", true);
+/// let ntdll = manualmap::read_and_map_module("c:\\windows\\system32\\ntdll.dll", true, true);
 ///
 /// match ntdll {
 ///     Ok(x) => if x.1 != 0 {println!("The base address of ntdll.dll is 0x{:X}.", x.1);},
 ///     Err(e) => println!("{}", e),      
 /// }
 /// ```
-pub fn read_and_map_module (filepath: &str, clean_dos_header: bool) -> Result<(PeMetadata,usize), String> 
+pub fn read_and_map_module (filepath: &str, clean_dos_header: bool, run_callbacks: bool) -> Result<(PeMetadata,usize), String> 
 {
     let file_content = fs::read(filepath).expect(&lc!("[x] Error opening the specified file."));
     let file_content_ptr = file_content.as_ptr() as *mut _;
   
-    let result = manually_map_module(file_content_ptr, clean_dos_header)?;
+    let result = manually_map_module(file_content_ptr, clean_dos_header, run_callbacks)?;
 
     unsafe 
     {
@@ -68,6 +70,8 @@ pub fn read_and_map_module (filepath: &str, clean_dos_header: bool) -> Result<(P
 /// If the clean_headers parameters is set to true, the mapped pe's dos header will be removed during the
 /// mapping process. Otherwise, the dos header will be kept untouched.
 /// 
+/// The third parameter determines whether TLS callbacks are executed (true) or not (false).
+/// 
 /// It will return either a pair (PeMetadata,usize) containing the mapped PE
 /// metadata and its base address or a String with a descriptive error message.
 ///
@@ -78,9 +82,9 @@ pub fn read_and_map_module (filepath: &str, clean_dos_header: bool) -> Result<(P
 ///
 /// let file_content = fs::read("c:\\windows\\system32\\ntdll.dll").expect("[x] Error opening the specified file.");
 /// let file_content_ptr = file_content.as_ptr();
-/// let result = manualmap::manually_map_module(file_content_ptr, true);
+/// let result = manualmap::manually_map_module(file_content_ptr, true, true);
 /// ```
-pub fn manually_map_module (file_ptr: *const u8, clean_dos_headers: bool) -> Result<(PeMetadata,usize), String> 
+pub fn manually_map_module (file_ptr: *const u8, clean_dos_headers: bool, run_callbacks: bool) -> Result<(PeMetadata,usize), String> 
 {
     let pe_info = get_pe_metadata(file_ptr, false)?;
     if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) 
@@ -123,8 +127,7 @@ pub fn manually_map_module (file_ptr: *const u8, clean_dos_headers: bool) -> Res
 
         rewrite_module_iat(&pe_info, image_ptr)?;
 
-        if clean_dos_headers
-        {
+        if clean_dos_headers {
             clean_dos_header(image_ptr);
         }
 
@@ -132,7 +135,9 @@ pub fn manually_map_module (file_ptr: *const u8, clean_dos_headers: bool) -> Res
 
         add_runtime_table(&pe_info, image_ptr);
 
-        run_tls_callbacks(&pe_info, image_ptr);
+        if run_callbacks {
+            run_tls_callbacks(&pe_info, image_ptr);
+        }
 
         Ok((pe_info,image_ptr as usize))
 

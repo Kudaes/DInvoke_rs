@@ -176,7 +176,7 @@ fn main() {
     unsafe 
     {
 
-        let ntdll: (PeMetadata, isize) = dinvoke_rs::manualmap::read_and_map_module("C:\\Windows\\System32\\ntdll.dll", true).unwrap();
+        let ntdll: (PeMetadata, isize) = dinvoke_rs::manualmap::read_and_map_module("C:\\Windows\\System32\\ntdll.dll", true, true).unwrap();
 
         let func_ptr:  unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32; // Function header available at data::RtlAdjustPrivilege
         let ret: Option<i32>; // RtlAdjustPrivilege returns an NSTATUS value, which is an i32

@@ -1190,7 +1190,7 @@ pub fn add_vectored_exception_handler(first: u32, address: usize) -> PVOID
 /// # Examples
 ///
 /// ```
-/// let ret = dinvoke::load_library_a("ntdll.dll");
+/// let ret = dinvoke::load_library_a_tp("ntdll.dll");
 ///
 /// if ret != 0 {println!("ntdll.dll base address is 0x{:X}.", addr);
 /// ```
