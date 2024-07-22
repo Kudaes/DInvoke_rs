@@ -9,6 +9,7 @@ use std::{collections::HashMap, ptr};
 use std::ffi::CString;
 #[cfg(target_arch = "x86_64")]
 use nanorand::{WyRand, Rng};
+use windows::Win32::Security::SECURITY_ATTRIBUTES;
 #[cfg(target_arch = "x86_64")]
 use windows::Win32::System::Diagnostics::Debug::{GetThreadContext,SetThreadContext};
 use windows::Win32::System::Memory::MEMORY_BASIC_INFORMATION;
@@ -1287,6 +1288,115 @@ pub fn free_library(module_handle: isize) -> usize {
         }
     }     
 }
+
+/// Dynamically calls CreateFileA.
+/// On success, it returns a valid handle to the specified file. Otherwise, a null handle is returned.
+pub fn create_file_a(name: *mut u8, access: u32, mode: u32, attributes: *const SECURITY_ATTRIBUTES, disposition: u32, flags: u32, template: HANDLE) -> HANDLE {
+    
+    unsafe 
+    {
+        let ret: Option<HANDLE>;
+        let func_ptr: data::CreateFileA;
+        let kernel32 = get_module_base_address(&lc!("kernel32.dll"));
+        dynamic_invoke!(kernel32,&lc!("CreateFileA"),func_ptr,ret,name,access,mode,attributes,disposition,flags,template);
+
+        match ret {
+            Some(x) => return x,
+            None => return HANDLE { 0: 0 } ,
+        }
+    }   
+}
+
+/// Dynamically calls GetFileSize.
+/// It returns either the specified file size (success) or 0 (an error ocurred).
+pub fn get_file_size(handle: HANDLE, size: *mut u32) -> u32 {
+    
+    unsafe 
+    {
+        let ret: Option<u32>;
+        let func_ptr: data::GetFileSize;
+        let kernel32 = get_module_base_address(&lc!("kernel32.dll"));
+        dynamic_invoke!(kernel32,&lc!("GetFileSize"),func_ptr,ret,handle,size);
+
+        match ret {
+            Some(x) => return x,
+            None => return 0,
+        }
+    }   
+}
+
+/// Dynamically calls CreateFileMappingW.
+///
+pub fn create_file_mapping_w(file: HANDLE, attributes: *const SECURITY_ATTRIBUTES, protect: u32, max_size_high: u32, max_size_low: u32, name: *mut u8) -> HANDLE {
+    
+    unsafe 
+    {
+        let ret: Option<HANDLE>;
+        let func_ptr: data::CreateFileMapping;
+        let kernel32 = get_module_base_address(&lc!("kernel32.dll"));
+        dynamic_invoke!(kernel32,&lc!("CreateFileMappingW"),func_ptr,ret,file,attributes,protect,max_size_high,max_size_low,name);
+
+        match ret {
+            Some(x) => return x,
+            None => return HANDLE { 0: 0 } ,
+        }
+    }   
+}
+
+/// Dynamically calls MapViewOfFile.
+///
+pub fn map_view_of_file (file: HANDLE, access: u32, off_high: u32, off_low: u32, bytes: usize) -> PVOID {
+    
+    unsafe 
+    {
+        let ret: Option<PVOID>;
+        let func_ptr: data::MapViewOfFile;
+        let kernel32 = get_module_base_address(&lc!("kernel32.dll"));
+        dynamic_invoke!(kernel32,&lc!("MapViewOfFile"),func_ptr,ret,file,access,off_high,off_low,bytes);
+
+        match ret {
+            Some(x) => return x,
+            None => return ptr::null_mut() ,
+        }
+    }   
+}
+
+/// Dynamically calls UnmapViewOfFile.
+///
+pub fn unmap_view_of_file (base_address: PVOID) -> bool {
+    
+    unsafe 
+    {
+        let ret: Option<BOOL>;
+        let func_ptr: data::UnmapViewOfFile;
+        let kernel32 = get_module_base_address(&lc!("kernel32.dll"));
+        dynamic_invoke!(kernel32,&lc!("UnmapViewOfFile"),func_ptr,ret,base_address);
+
+        match ret {
+            Some(x) => return x.as_bool(),
+            None => return false ,
+        }
+    }   
+}
+
+/// Dynamically calls RollbackTransaction.
+///
+pub fn rollback_transaction(transaction: HANDLE) -> bool {
+    
+    unsafe 
+    {
+        let ret: Option<BOOL>;
+        let func_ptr: data::RollbackTransaction;
+        let ktmv = load_library_a(&lc!("KtmW32.dll"));
+        dynamic_invoke!(ktmv,&lc!("RollbackTransaction"),func_ptr,ret,transaction);
+
+        match ret {
+            Some(x) => return x.as_bool(),
+            None => return false ,
+        }
+    }   
+}
+
 /// Opens a HANDLE to a process.
 ///
 /// If the function fails, it will return a null HANDLE.
