@@ -9,6 +9,7 @@ use std::{collections::HashMap, ptr};
 use std::ffi::CString;
 #[cfg(target_arch = "x86_64")]
 use nanorand::{WyRand, Rng};
+use windows::Win32::Foundation::BOOL;
 use windows::Win32::Security::SECURITY_ATTRIBUTES;
 #[cfg(target_arch = "x86_64")]
 use windows::Win32::System::Diagnostics::Debug::{GetThreadContext,SetThreadContext};
