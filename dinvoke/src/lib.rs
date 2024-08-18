@@ -2,13 +2,19 @@
 extern crate litcrypt2;
 use_litcrypt!();
 
+use libc::c_void;
+use litcrypt2::lc;
 use std::cell::UnsafeCell;
 use std::mem::size_of;
 use std::panic;
 use std::{collections::HashMap, ptr};
-use std::ffi::CString;
+use std::ffi::{CString, OsString};
+use std::os::windows::ffi::OsStringExt;
+use data::MAX_PATH;
 #[cfg(target_arch = "x86_64")]
 use nanorand::{WyRand, Rng};
+use winapi::um::psapi::{EnumProcessModules, GetModuleBaseNameW, GetModuleFileNameExW};
+use winapi::shared::ntdef::LARGE_INTEGER;
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::Security::SECURITY_ATTRIBUTES;
 #[cfg(target_arch = "x86_64")]
@@ -26,10 +32,6 @@ use windows::Win32::{Foundation::{HANDLE, HINSTANCE,UNICODE_STRING}, System::Thr
 use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, ExceptionHandleFunction, ExceptionPointers, LptopLevelExceptionFilter, NtAllocateVirtualMemoryArgs, NtCreateThreadExArgs, NtOpenProcessArgs, NtProtectVirtualMemoryArgs, NtWriteVirtualMemoryArgs, PeMetadata, PsAttributeList, PsCreateInfo, CONTEXT, DLL_PROCESS_ATTACH, EAT, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PROCESS_QUERY_LIMITED_INFORMATION, PVOID, TLS_OUT_OF_INDEXES};
 #[cfg(target_arch = "x86")]
 use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, LptopLevelExceptionFilter, PeMetadata, PsAttributeList, PsCreateInfo, DLL_PROCESS_ATTACH, EAT, PAGE_EXECUTE_READWRITE, PVOID, TLS_OUT_OF_INDEXES};
-use libc::c_void;
-use litcrypt2::lc;
-use winproc::Process;
-use winapi::shared::ntdef::LARGE_INTEGER;
 
 #[cfg(target_arch = "x86_64")]
 static mut HARDWARE_BREAKPOINTS: bool = false;
@@ -379,20 +381,105 @@ pub fn unhook_function(address: usize) -> bool
 /// ```
 pub fn get_module_base_address (module_name: &str) -> usize
 {
-    let process = Process::current();
-    let modules = process.module_list().unwrap();
-    for m in modules
+    let modules = get_modules_list().unwrap();
+
+    for m in modules 
     {
-        if m.name().unwrap().to_lowercase().to_ascii_lowercase() == module_name.to_ascii_lowercase() ||
-            m.path().unwrap().to_str().unwrap().to_ascii_lowercase() == module_name.to_ascii_lowercase()
+        let name = get_module_name(m);
+        let path = get_module_path(m);
+
+        if name.is_err() || path.is_err() {
+            continue;
+        }
+
+        if name.unwrap().to_ascii_lowercase() == module_name.to_ascii_lowercase() ||
+            path.unwrap().to_ascii_lowercase() == module_name.to_ascii_lowercase()
         {
-            let handle = m.handle();
-            return handle as usize;
+            return m;
         }
     }
 
     0
 }
+
+fn get_modules_list() -> Result<Vec<usize>, u32> 
+{
+    unsafe 
+    {
+        let mut mod_handles: Vec<usize> = Vec::new();
+        let mut reserved = 0;
+        let mut needed = 0;
+        let current_process = HANDLE(-1);
+        let current_process: *mut winapi::ctypes::c_void = std::mem::transmute(current_process);
+
+        // Code extracted from winproc
+        let enum_mods = |mod_handles: &mut Vec<usize>, needed: *mut u32| {
+            let cb = mod_handles.len() as u32;
+
+            let res = EnumProcessModules(current_process, mod_handles.as_mut_ptr() as _, cb, needed);
+
+            if res == 0 {
+                Err(get_last_error())
+            } else {
+                Ok(())
+            }
+        };
+
+        // Code extracted from winproc
+        loop {
+            enum_mods(&mut mod_handles, &mut needed)?;
+            if needed <= reserved {
+                break;
+            }
+            reserved = needed;
+            mod_handles.resize(needed as usize, 0);
+        }
+        
+
+        Ok(mod_handles)
+    }
+}
+
+fn get_module_name(hmodule: usize) -> Result<String,u32>
+{
+    unsafe 
+    {
+        let current_process = HANDLE(-1);
+        let current_process: *mut winapi::ctypes::c_void = std::mem::transmute(current_process);
+        let mut buffer: [u16; MAX_PATH as _] = std::mem::zeroed();
+
+        let res = GetModuleBaseNameW(current_process, hmodule as _, buffer.as_mut_ptr(), MAX_PATH);
+        if res == 0 {
+            Err(get_last_error())
+        } else {
+            // Code extracted from winproc
+            Ok(OsString::from_wide(&buffer[0..res as usize])
+                    .to_string_lossy()
+                    .into_owned())
+        }
+    }
+}
+
+fn get_module_path(hmodule: usize) -> Result<String,u32>
+{
+    unsafe 
+    {
+        let current_process = HANDLE(-1);
+        let current_process: *mut winapi::ctypes::c_void = std::mem::transmute(current_process);
+        let mut buffer: [u16; MAX_PATH as _] = std::mem::zeroed();
+
+        let res = GetModuleFileNameExW(current_process, hmodule as _, buffer.as_mut_ptr(), MAX_PATH);
+        if res == 0 {
+            Err(get_last_error())
+        } else {
+            // Code extracted from winproc
+            Ok(OsString::from_wide(&buffer[0..res as usize])
+                    .to_string_lossy()
+                    .into_owned())
+        }
+    }
+}
+
 
 /// Retrieves the address of an exported function from the specified module.
 ///
@@ -1194,7 +1281,7 @@ pub fn add_vectored_exception_handler(first: u32, address: usize) -> PVOID
 /// ```
 /// let ret = dinvoke::load_library_a_tp("ntdll.dll");
 ///
-/// if ret != 0 {println!("ntdll.dll base address is 0x{:X}.", addr);
+/// if ret != 0 {println!("ntdll.dll base address is 0x{:X}.", addr)};
 /// ```
 pub fn load_library_a_tp(module: &str) -> usize {
 
@@ -1241,7 +1328,7 @@ pub fn load_library_a_tp(module: &str) -> usize {
 /// ```
 /// let ret = dinvoke::load_library_a("ntdll.dll");
 ///
-/// if ret != 0 {println!("ntdll.dll base address is 0x{:X}.", addr);
+/// if ret != 0 {println!("ntdll.dll base address is 0x{:X}.", addr)};
 /// ```
 pub fn load_library_a(module: &str) -> usize {
 
@@ -1272,7 +1359,7 @@ pub fn load_library_a(module: &str) -> usize {
 /// let module_handle: usize = dinvoke::load_library_a("somedll.dll");
 /// let ret = dinvoke::free_library(module_handle as isize);
 ///
-/// if ret == 0 {println!("somedll.dll sucessfully freed.");
+/// if ret == 0 {println!("somedll.dll sucessfully freed.")};
 /// ```
 pub fn free_library(module_handle: isize) -> usize {
 
@@ -1558,6 +1645,23 @@ pub fn tls_set_value(index: u32, data: PVOID) -> bool
     }
 }
 
+/// Dynamically calls EnumProcessModules.
+pub fn enum_process_modules(process: HANDLE, module: *mut usize, cb: u32, needed: *mut u32) -> bool
+{
+    unsafe 
+    {    
+        let ret: Option<bool>;
+        let func_ptr: data::EnumProcessModules;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("EnumProcessModules"),func_ptr,ret,process,module,cb,needed);
+
+        match ret {
+            Some(x) => return x,
+            None => return false, 
+        }
+    }
+}
+
 /// Dynamically calls GetModuleHandleExA.
 pub fn get_module_handle_ex_a(flags: i32, module_name: *const u8, module: *mut usize) -> bool
 {
@@ -1571,6 +1675,40 @@ pub fn get_module_handle_ex_a(flags: i32, module_name: *const u8, module: *mut u
         match ret {
             Some(x) => return x,
             None => return false, 
+        }
+    }
+}
+
+/// Dynamically calls GetModuleBaseNameW.
+pub fn get_module_base_name_w(process: HANDLE, module: usize, base_name: *mut u16, size: u32) -> u32
+{
+    unsafe 
+    {    
+        let ret: Option<u32>;
+        let func_ptr: data::GetModuleBaseNameW;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("GetModuleBaseNameW"),func_ptr,ret,process,module,base_name,size);
+
+        match ret {
+            Some(x) => return x,
+            None => return 0, 
+        }
+    }
+}
+
+/// Dynamically calls GetModuleBaseNameW.
+pub fn get_module_file_name_ex_w(process: HANDLE, module: usize, base_name: *mut u16, size: u32) -> u32
+{
+    unsafe 
+    {    
+        let ret: Option<u32>;
+        let func_ptr: data::GetModuleFileNameExW;
+        let module_base_address = get_module_base_address(&lc!("kernel32.dll")); 
+        dynamic_invoke!(module_base_address,&lc!("GetModuleFileNameExW"),func_ptr,ret,process,module,base_name,size);
+
+        match ret {
+            Some(x) => return x,
+            None => return 0, 
         }
     }
 }

@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, ffi::c_void};
 use windows::Win32::{Foundation::{BOOL, HANDLE, HINSTANCE, UNICODE_STRING}, Graphics::Printing::{DOC_INFO_1A, PRINTER_DEFAULTSA}, Security::SECURITY_ATTRIBUTES, System::{Diagnostics::{Debug::{EXCEPTION_RECORD, IMAGE_DATA_DIRECTORY, IMAGE_OPTIONAL_HEADER32, IMAGE_SECTION_HEADER, MINIDUMP_CALLBACK_INFORMATION, MINIDUMP_EXCEPTION_INFORMATION, MINIDUMP_USER_STREAM_INFORMATION}, ToolHelp::THREADENTRY32}, Memory::MEMORY_BASIC_INFORMATION, SystemInformation::SYSTEM_INFO, Threading::{PROCESS_INFORMATION, STARTUPINFOW}, WindowsProgramming::CLIENT_ID, IO::{IO_STATUS_BLOCK, OVERLAPPED}}};
-use windows::core::PSTR;
 use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use winapi::shared::ntdef::LARGE_INTEGER;
 
@@ -25,6 +24,7 @@ pub type OpenPrintA = unsafe extern "system" fn (*mut u8, *mut HANDLE, *mut PRIN
 pub type StartDocPrinterA = unsafe extern "system" fn (HANDLE, u32, *mut DOC_INFO_1A) -> u32;
 pub type GetDefaultPrinterA = unsafe extern "system" fn (*mut u8, *mut u32) -> BOOL;
 pub type EnumProcesses = unsafe extern "system" fn (*mut u32, u32, *mut u32) -> bool;
+pub type EnumProcessModules = unsafe extern "system" fn (HANDLE, *mut usize, u32, *mut u32) -> bool;
 pub type QueueUserWorkItem = unsafe extern "system" fn (*mut c_void, *mut c_void, u32) -> bool;
 pub type InitializeProcThreadAttributeList = unsafe extern "system" fn (PVOID, u32, u32, *mut usize) -> BOOL;
 pub type UpdateProcThreadAttribute = unsafe extern "system" fn (PVOID, u32, usize, *const c_void, usize, PVOID, *const usize) -> BOOL;
@@ -55,6 +55,8 @@ pub type TlsAlloc = unsafe extern "system" fn () -> u32;
 pub type TlsGetValue = unsafe extern "system" fn (u32) -> PVOID;
 pub type TlsSetValue = unsafe extern "system" fn (u32, PVOID) -> bool;
 pub type GetModuleHandleExA = unsafe extern "system" fn (i32,*const u8,*mut usize) -> bool;
+pub type GetModuleBaseNameW = unsafe extern "system" fn (HANDLE, usize, *mut u16, u32) -> u32;
+pub type GetModuleFileNameExW = unsafe extern "system" fn (HANDLE, usize, *mut u16, u32) -> u32;
 pub type GetSystemInfo = unsafe extern "system" fn (*mut SYSTEM_INFO);
 pub type VirtualQueryEx = unsafe extern "system" fn (HANDLE, *const c_void, *mut MEMORY_BASIC_INFORMATION, usize) -> usize; 
 pub type LptopLevelExceptionFilter = usize;
@@ -176,6 +178,8 @@ pub const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x20;
 pub const FILE_NON_DIRECTORY_FILE: u32 = 0x40;
 
 pub const SEC_IMAGE: u32 = 0x1000000;
+
+pub const MAX_PATH: u32 = 260;
 
 #[derive(Clone)]
 #[repr(C)]
