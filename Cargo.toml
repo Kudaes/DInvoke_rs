@@ -10,8 +10,11 @@ debug-assertions = false
 debug-assertions = false # required to avoid misaligned pointer dereference panics
 strip = true  
 
+[features]
+syscall = ["dinvoke/syscall"]
+
 [dependencies]
-dinvoke = { path = "dinvoke" }
+dinvoke = { path = "dinvoke"}
 manualmap = { path = "manualmap" }
 data = { path = "data" }
 overload = { path = "overload" }

@@ -17,6 +17,12 @@ nanorand = {version = "0.7.0", optional = true}
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 nanorand = {version = "0.7.0"}
 
+[features]
+syscall = []
+
+[build-dependencies]
+cc = "1.0.83"
+
 [dependencies.windows]
 version = "0.51"
 features = [

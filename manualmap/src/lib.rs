@@ -193,7 +193,7 @@ pub fn get_runtime_table(image_ptr: *mut c_void) -> (*mut data::RuntimeFunction,
 ///
 /// let file_content = fs::read("c:\\windows\\system32\\ntdll.dll").expect("[x] Error opening the specified file.");
 /// let file_content_ptr = file_content.as_ptr();
-/// let result = manualmap::get_pe_metadata(file_content_ptr);
+/// let result = manualmap::get_pe_metadata(file_content_ptr, false);
 /// ```
 pub fn get_pe_metadata (module_ptr: *const u8, check_signature: bool) -> Result<PeMetadata,String>
 {

@@ -10,7 +10,6 @@ use std::panic;
 use std::{collections::HashMap, ptr};
 use std::ffi::{CString, OsString};
 use std::os::windows::ffi::OsStringExt;
-use data::MAX_PATH;
 #[cfg(target_arch = "x86_64")]
 use nanorand::{WyRand, Rng};
 use winapi::um::psapi::{EnumProcessModules, GetModuleBaseNameW, GetModuleFileNameExW};
@@ -29,9 +28,9 @@ use windows::Win32::{Foundation::{HANDLE, HINSTANCE,UNICODE_STRING}, System::Thr
 #[cfg(target_arch = "x86")]
 use windows::Win32::{Foundation::{HANDLE, HINSTANCE,UNICODE_STRING}, System::Threading::GetCurrentProcess};
 #[cfg(target_arch = "x86_64")]
-use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, ExceptionHandleFunction, ExceptionPointers, LptopLevelExceptionFilter, NtAllocateVirtualMemoryArgs, NtCreateThreadExArgs, NtOpenProcessArgs, NtProtectVirtualMemoryArgs, NtWriteVirtualMemoryArgs, PeMetadata, PsAttributeList, PsCreateInfo, CONTEXT, DLL_PROCESS_ATTACH, EAT, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PROCESS_QUERY_LIMITED_INFORMATION, PVOID, TLS_OUT_OF_INDEXES};
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, ExceptionHandleFunction, ExceptionPointers, LptopLevelExceptionFilter, NtAllocateVirtualMemoryArgs, NtCreateThreadExArgs, NtOpenProcessArgs, NtProtectVirtualMemoryArgs, NtWriteVirtualMemoryArgs, PeMetadata, PsAttributeList, PsCreateInfo, CONTEXT, DLL_PROCESS_ATTACH, EAT, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PROCESS_QUERY_LIMITED_INFORMATION, PVOID, TLS_OUT_OF_INDEXES, MAX_PATH};
 #[cfg(target_arch = "x86")]
-use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, LptopLevelExceptionFilter, PeMetadata, PsAttributeList, PsCreateInfo, DLL_PROCESS_ATTACH, EAT, PAGE_EXECUTE_READWRITE, PVOID, TLS_OUT_OF_INDEXES};
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, LptopLevelExceptionFilter, PeMetadata, PsAttributeList, PsCreateInfo, DLL_PROCESS_ATTACH, EAT, PAGE_EXECUTE_READWRITE, PVOID, TLS_OUT_OF_INDEXES, MAX_PATH};
 
 #[cfg(target_arch = "x86_64")]
 static mut HARDWARE_BREAKPOINTS: bool = false;
@@ -49,6 +48,32 @@ static mut NT_WRITE_VIRTUAL_MEMORY_ARGS: NtWriteVirtualMemoryArgs = NtWriteVirtu
 static mut NT_CREATE_THREAD_EX_ARGS: NtCreateThreadExArgs = NtCreateThreadExArgs{thread:ptr::null_mut(), access: 0, attributes: ptr::null_mut(), process: HANDLE {0: -1}};
 static mut HOOKED_FUNCTIONS_INFO: Vec<(usize,Vec<u8>)> = vec![];
 
+#[cfg(all(target_arch = "x86_64", feature = "syscall"))]
+extern "C" {
+    fn run_indirect_syscall(structure: PVOID) -> *mut u8;
+    fn restore();
+}
+
+#[cfg(all(target_arch = "x86_64", feature = "syscall"))]
+#[repr(C)] 
+struct Configuration
+{
+    jump_address: usize,
+    return_address: usize,
+    nargs: usize,
+    arg01: usize,
+    arg02: usize,
+    arg03: usize,
+    arg04: usize,
+    arg05: usize,
+    arg06: usize,
+    arg07: usize,
+    arg08: usize,
+    arg09: usize,
+    arg10: usize,
+    arg11: usize,
+    syscall_id: u32
+}
 
 /// Enables or disables the use of exception handlers in
 /// combination with hardware breakpoints.
@@ -951,7 +976,7 @@ pub fn find_syscall_address(address: usize) -> usize
 ///     }
 /// }
 /// ```
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", not(feature = "syscall")))]
 pub fn prepare_syscall(id: u32, eat: EAT) -> usize {
 
     let mut sh: [u8;21] = 
@@ -2409,7 +2434,7 @@ macro_rules! dynamic_invoke {
 ///     None => println!("Error executing direct syscall for NtQueryInformationProcess."),
 /// }
 /// ```
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", not(feature = "syscall")))]
 #[macro_export]
 macro_rules! execute_syscall {
 
@@ -2436,5 +2461,115 @@ macro_rules! execute_syscall {
         {
             $c = None;
         }
+    }
+}
+
+#[cfg(all(target_arch = "x86_64", feature = "syscall"))]
+#[macro_export]
+macro_rules! indirect_syscall {
+
+    ($a:expr, $($x:expr),*) => {
+
+        unsafe
+        {
+            let mut temp_vec = Vec::new();
+            let t = $crate::prepare_syscall($a);
+            let r = -1isize;
+            let mut res: *mut u8 = std::mem::transmute(r);
+            if t.0 != u32::MAX 
+            {
+                temp_vec.push(t.1);
+                $(
+                    let temp = $x as usize; // This is meant to convert integers with smaller size than 8 bytes
+                    temp_vec.push(temp);
+                )*
+                
+                res = $crate::run_syscall(temp_vec, t.0);
+            }
+
+            res
+        }
+    }
+}
+
+#[cfg(all(target_arch = "x86_64", feature = "syscall"))]
+pub fn prepare_syscall(function_name: &str) -> (u32, usize)
+{
+
+    let ntdll = get_module_base_address(&lc!("ntdll.dll"));
+    let eat = get_ntdll_eat(ntdll);
+    let id = get_syscall_id(&eat, function_name);
+    if id != u32::MAX
+    {
+        
+        let function_addr = get_function_address(ntdll, function_name);
+        let syscall_addr: usize = find_syscall_address(function_addr as usize);
+        if syscall_addr != 0 {
+            return (id as u32,syscall_addr);
+        }
+
+        let max_range = eat.len();
+        let mut rng: WyRand = WyRand::new();
+        loop 
+        {
+            let mut function = &"".to_string();
+            for s in eat.values()
+            {
+                let index = rng.generate_range(0..max_range);
+                if index < max_range / 5
+                {
+                    function = s;
+                    break;
+                }
+            }
+
+            let function_addr = get_function_address(ntdll, function);
+            let syscall_addr: usize = find_syscall_address(function_addr as usize);
+            if syscall_addr != 0 {
+                return (id as u32,syscall_addr);
+            }   
+        }
+    }
+    
+    (u32::MAX,0)
+}
+
+#[cfg(all(target_arch = "x86_64", feature = "syscall"))]
+pub fn run_syscall(mut args: Vec<usize>, id: u32) -> *mut u8
+{
+    unsafe 
+    {
+        let mut config: Configuration = std::mem::zeroed();
+        config.jump_address = args.remove(0);
+        let restore_address = (restore as *const()) as usize;
+        config.return_address = restore_address;
+        config.syscall_id = id;
+
+        let mut args_number = args.len();
+        config.nargs = args_number;
+
+        while args_number > 0
+        {
+            match args_number
+            {
+                11  => config.arg11 = args[args_number-1],
+                10  => config.arg10 = args[args_number-1],
+                9   => config.arg09 = args[args_number-1],
+                8   => config.arg08 = args[args_number-1],
+                7   => config.arg07 = args[args_number-1],
+                6   => config.arg06 = args[args_number-1],
+                5   => config.arg05 = args[args_number-1],
+                4   => config.arg04 = args[args_number-1],
+                3   => config.arg03 = args[args_number-1],
+                2   => config.arg02 = args[args_number-1],
+                1   => config.arg01 = args[args_number-1],
+                _   => () 
+            }
+    
+            args_number -= 1;
+        }
+
+        let config: PVOID = std::mem::transmute(&config);
+        run_indirect_syscall(config)
     }
 }
