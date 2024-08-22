@@ -122,6 +122,7 @@ pub fn find_decoy_module (min_size: i64) -> String
         let windir = &lc!("WINDIR");
         let sys32 = &lc!("System32");
         let r = rng.generate_range(0..files.len());
+        let windir = std::env::var(windir).unwrap();
         let path =  format!("{}\\{}\\{}", windir, sys32, &files[r]);
         let size = fs::metadata(&path).unwrap().len() as i64;
         if size > (min_size * 2) {

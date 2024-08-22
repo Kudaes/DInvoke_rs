@@ -27,8 +27,10 @@ use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows::Win32::{Foundation::{HANDLE, HINSTANCE,UNICODE_STRING}, System::Threading::{GetCurrentProcess,GetCurrentThread}};
 #[cfg(target_arch = "x86")]
 use windows::Win32::{Foundation::{HANDLE, HINSTANCE,UNICODE_STRING}, System::Threading::GetCurrentProcess};
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", not(feature = "syscall")))]
 use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, ExceptionHandleFunction, ExceptionPointers, LptopLevelExceptionFilter, NtAllocateVirtualMemoryArgs, NtCreateThreadExArgs, NtOpenProcessArgs, NtProtectVirtualMemoryArgs, NtWriteVirtualMemoryArgs, PeMetadata, PsAttributeList, PsCreateInfo, CONTEXT, DLL_PROCESS_ATTACH, EAT, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PROCESS_QUERY_LIMITED_INFORMATION, PVOID, TLS_OUT_OF_INDEXES, MAX_PATH};
+#[cfg(all(target_arch = "x86_64", feature = "syscall"))]
+use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, ExceptionHandleFunction, ExceptionPointers, LptopLevelExceptionFilter, NtAllocateVirtualMemoryArgs, NtCreateThreadExArgs, NtOpenProcessArgs, NtProtectVirtualMemoryArgs, NtWriteVirtualMemoryArgs, PeMetadata, PsAttributeList, PsCreateInfo, CONTEXT, DLL_PROCESS_ATTACH, EAT, PAGE_EXECUTE_READWRITE, PAGE_READONLY, PROCESS_QUERY_LIMITED_INFORMATION, PVOID, TLS_OUT_OF_INDEXES, MAX_PATH};
 #[cfg(target_arch = "x86")]
 use data::{ApiSetNamespace, ApiSetNamespaceEntry, ApiSetValueEntry, ClientId, EntryPoint, LptopLevelExceptionFilter, PeMetadata, PsAttributeList, PsCreateInfo, DLL_PROCESS_ATTACH, EAT, PAGE_EXECUTE_READWRITE, PVOID, TLS_OUT_OF_INDEXES, MAX_PATH};
 

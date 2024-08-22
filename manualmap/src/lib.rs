@@ -2,7 +2,6 @@
 extern crate litcrypt2;
 use_litcrypt!();
 
-
 use std::cell::UnsafeCell;
 use std::{collections::HashMap, path::Path};
 use std::{fs, ptr};
@@ -40,7 +39,7 @@ use litcrypt2::lc;
 /// # Examples
 ///
 /// ```
-/// let ntdll = manualmap::read_and_map_module("c:\\windows\\system32\\ntdll.dll", true, true);
+/// let ntdll = manualmap::read_and_map_module(r"c:\windows\system32\ntdll.dll", true, false);
 ///
 /// match ntdll {
 ///     Ok(x) => if x.1 != 0 {println!("The base address of ntdll.dll is 0x{:X}.", x.1);},

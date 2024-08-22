@@ -1,6 +1,6 @@
 # DInvoke_rs
 
-Rust port of [Dinvoke](https://github.com/TheWover/DInvoke). DInvoke_rs may be used for many purposes such as PE parsing, dynamic exported functions resolution, dynamically loading PE plugins at runtime, API hooks evasion and more. This project is meant to be used as a template (just add your own Rust code on top of it) or as a nested crate that can be imported on your own project.
+Rust port of [Dinvoke](https://github.com/TheWover/DInvoke). DInvoke_rs may be used for many purposes such as PE parsing, dynamic exported functions resolution, dynamically loading PE plugins at runtime, API hooks evasion and more.
 
 Features:
 * Dynamically resolve and invoke undocumented Windows APIs from Rust.
@@ -38,7 +38,7 @@ Import this crate into your project by adding the following line to your `cargo.
 
 ```rust
 [dependencies]
-dinvoke_rs = "0.1.5"
+dinvoke_rs = "0.1.6"
 ```
 
 # Examples
@@ -176,7 +176,7 @@ fn main() {
     unsafe 
     {
 
-        let ntdll: (PeMetadata, isize) = dinvoke_rs::manualmap::read_and_map_module("C:\\Windows\\System32\\ntdll.dll", true, true).unwrap();
+        let ntdll: (PeMetadata, usize) = dinvoke_rs::manualmap::read_and_map_module(r"C:\Windows\System32\ntdll.dll", true, false).unwrap();
 
         let func_ptr:  unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32; // Function header available at data::RtlAdjustPrivilege
         let ret: Option<i32>; // RtlAdjustPrivilege returns an NSTATUS value, which is an i32
@@ -216,7 +216,7 @@ fn main() {
         let payload: Vec<u8> = your_download_function();
 
         // This will map your payload into a legitimate file-backed memory section.
-        let overload: (PeMetadata, isize) = dinvoke_rs::overload::overload_module(payload, "").unwrap();
+        let overload: (PeMetadata, usize) = dinvoke_rs::overload::overload_module(&payload, "").unwrap();
         
         // Then any exported function of the mapped PE can be dynamically called.
         // Let's say we want to execute a function with header pub fn random_function(i32, i32) -> i32
@@ -250,20 +250,19 @@ fn main() {
 
     unsafe 
     {
-
         // The manager will take care of the hiding/remapping process and it can be used in multi-threading scenarios 
         let mut manager = Manager::new();
 
         // This will map ntdll.dll into a memory section pointing to cdp.dll. 
         // It will return the payload (ntdll) content, the decoy module (cdp) content and the payload base address.
-        let overload: ((Vec<u8>, Vec<u8>), isize) = dinvoke_rs::overload::managed_read_and_overload("c:\\windows\\system32\\ntdll.dll", "c:\\windows\\system32\\cdp.dll").unwrap();
+        let overload: ((Vec<u8>, Vec<u8>), usize) = dinvoke_rs::overload::managed_read_and_overload(r"c:\windows\system32\ntdll.dll", r"c:\windows\system32\cdp.dll").unwrap();
         
         // This will allow the manager to start taking care of the module fluctuation process over this mapped PE.
         // Also, it will hide ntdll, replacing its content with the legitimate cdp.dll content.
-        let _r = manager.new_module(overload.1 as i64, overload.0.0, overload.0.1);
+        let _r = manager.new_module(overload.1, overload.0.0, overload.0.1);
 
         // Now, if we want to use our fresh ntdll copy, we just need to tell the manager to remap our payload into the memory section.
-        let _ = manager.map_module(overload.1 as i64);
+        let _ = manager.map_module(overload.1);
 
         // After ntdll has being remapped, we can dynamically call RtlAdjustPrivilege (or any other function) without worrying about EDR hooks.
         let func_ptr:  unsafe extern "system" fn (u32, u8, u8, *mut u8) -> i32; // Function header available at data::RtlAdjustPrivilege
@@ -283,7 +282,7 @@ fn main() {
         }
 
         // Since we dont want to use our ntdll copy for the moment, we hide it again. It can we remapped at any time.
-        let _ = manager.hide_module(overload.1 as i64);
+        let _ = manager.hide_module(overload.1);
 
     }
 }
@@ -301,12 +300,13 @@ use dinvoke_rs::data::{THREAD_ALL_ACCESS, ClientId};
 use windows::{Win32::Foundation::HANDLE, Wdk::Foundation::OBJECT_ATTRIBUTES};
 
 fn main() {
+
     unsafe
     {
         // We active the use of hardware breakpoints to spoof syscall parameters
         dinvoke_rs::dinvoke::use_hardware_breakpoints(true);
         // We get the memory address of our function and set it as a VEH
-        let handler = dinvoke::breakpoint_handler as usize;
+        let handler = dinvoke_rs::dinvoke::breakpoint_handler as usize;
         dinvoke_rs::dinvoke::add_vectored_exception_handler(1, handler);
 
         let h = HANDLE {0: -1};
@@ -315,13 +315,13 @@ fn main() {
         let a = OBJECT_ATTRIBUTES::default(); // https://github.com/Kudaes/rust_tips_and_tricks/tree/main#transmute
         let attributes: *mut OBJECT_ATTRIBUTES = std::mem::transmute(&a);
         // We set the PID of the remote process 
-        let remote_pid = 10952isize;
-        let c = CLIENT_ID {unique_process: HANDLE {0: remote_pid}, unique_thread: HANDLE::default()};
-        let client_id: *mut CLIENT_ID = std::mem::transmute(&c);
+        let remote_pid = 472isize;
+        let c = ClientId {unique_process: HANDLE {0: remote_pid}, unique_thread: HANDLE::default()};
+        let client_id: *mut ClientId = std::mem::transmute(&c);
         // A call to NtOpenProcess is performed through Dinvoke. The parameters will be
         // automatically spoofed by the function and restored to the original values
         // before executing the syscall.
-        let ret = dinvoke::nt_open_process(handle, access, attributes, client_id);
+        let ret = dinvoke_rs::dinvoke::nt_open_process(handle, access, attributes, client_id);
 
         println!("NTSTATUS: {:x}", ret);
 
