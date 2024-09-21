@@ -477,7 +477,7 @@ fn get_module_name(hmodule: usize) -> Result<String,u32>
 
         let res = GetModuleBaseNameW(current_process, hmodule as _, buffer.as_mut_ptr(), MAX_PATH);
         if res == 0 {
-            Err(get_last_error())
+            Err(-1i32 as u32)
         } else {
             // Code extracted from winproc
             Ok(OsString::from_wide(&buffer[0..res as usize])
@@ -497,7 +497,7 @@ fn get_module_path(hmodule: usize) -> Result<String,u32>
 
         let res = GetModuleFileNameExW(current_process, hmodule as _, buffer.as_mut_ptr(), MAX_PATH);
         if res == 0 {
-            Err(get_last_error())
+            Err(-1i32 as u32)
         } else {
             // Code extracted from winproc
             Ok(OsString::from_wide(&buffer[0..res as usize])
@@ -631,6 +631,10 @@ fn get_forward_address(function_ptr: *mut u8) -> usize {
         let mut forwarded_module_name = values[0].to_string();
         let forwarded_export_name = values[1].to_string();
 
+        if forwarded_module_name.len() < 2 || forwarded_export_name.len() == 0 {
+            return function_ptr as usize;
+        }
+        
         let api_set = get_api_mapping();
 
         let prev_hook = panic::take_hook();
@@ -2380,7 +2384,7 @@ macro_rules! dynamic_invoke {
 
     ($a:expr, $b:expr, $c:expr) => {
         
-        let ret = $crate::call_module_entry_point(&$a,$b);
+        let ret = $crate::call_module_entry_point($a,$b);
 
         match ret {
             Ok(_) => $c = true,

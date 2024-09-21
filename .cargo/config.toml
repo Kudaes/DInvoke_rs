@@ -5,4 +5,5 @@ rustflags = [
     "--remap-path-prefix", "manualmap=",
     "--remap-path-prefix", "overload=",
     "--remap-path-prefix", "dmanager=",
+        "-C", "link-args=/SUBSYSTEM:CONSOLE",
     ] 

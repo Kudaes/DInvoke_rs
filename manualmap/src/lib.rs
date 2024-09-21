@@ -55,8 +55,7 @@ pub fn read_and_map_module (filepath: &str, clean_dos_header: bool, run_callback
 
     unsafe 
     {
-        for i in 0..file_content.len()
-        {
+        for i in 0..file_content.len() {
             *(file_content_ptr.add(i)) = 0u8;
         }
 
@@ -86,18 +85,15 @@ pub fn read_and_map_module (filepath: &str, clean_dos_header: bool, run_callback
 pub fn manually_map_module (file_ptr: *const u8, clean_dos_headers: bool, run_callbacks: bool) -> Result<(PeMetadata,usize), String> 
 {
     let pe_info = get_pe_metadata(file_ptr, false)?;
-    if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) 
-    {
+    if (pe_info.is_32_bit && (size_of::<usize>() == 8)) || (!pe_info.is_32_bit && (size_of::<usize>() == 4)) {
         return Err(lc!("[x] The module architecture does not match the process architecture."));
     }
 
     let dwsize;
-    if pe_info.is_32_bit 
-    {
+    if pe_info.is_32_bit {
         dwsize = pe_info.opt_header_32.SizeOfImage as usize;
     }
-    else 
-    {
+    else {
         dwsize = pe_info.opt_header_64.size_of_image as usize;
     }
 
@@ -113,8 +109,7 @@ pub fn manually_map_module (file_ptr: *const u8, clean_dos_headers: bool, run_ca
 
         let _r = dinvoke::close_handle(handle);
 
-        if ret != 0
-        {
+        if ret != 0 {
             return Err(lc!("[x] Error allocating memory."));
         }
         
