@@ -3,6 +3,5 @@ rustflags = [
     "--remap-path-prefix", "dinvoke=",
     "--remap-path-prefix", "data=",
     "--remap-path-prefix", "manualmap=",
-    "--remap-path-prefix", "overload=",
-    "--remap-path-prefix", "dmanager=",
+    "--remap-path-prefix", "utils=",
     ] 

@@ -1,7 +1,7 @@
 fn main() {
-    if cfg!(feature = "syscall") {
-        cc::Build::new()
-            .file("src/gateway.asm")
-            .compile("gateway"); 
-    }
+    //static_vcruntime::metabuild();
+    //println!("cargo:rustc-link-lib=kernel32");
+    cc::Build::new()
+    .file("src/gateway.asm")
+    .compile("gateway"); 
 }

@@ -1,24 +1,22 @@
 [package]
-name = "dinvokeRs"
+name = "dinvoke_nostd"
 version = "0.1.0"
 edition = "2021"
 
-[profile.dev]
-debug-assertions = false
-
-[profile.release]
-debug-assertions = false # required to avoid misaligned pointer dereference panics
-strip = true  
-
-[features]
-syscall = ["dinvoke/syscall"]
-
 [dependencies]
 dinvoke = { path = "dinvoke"}
-manualmap = { path = "manualmap" }
 data = { path = "data" }
-overload = { path = "overload" }
-dmanager = { path = "dmanager" }
+utils = { path = "utils" }
+manualmap = { path = "manualmap" }
 
-[build-dependencies]
-static_vcruntime = "2.0"
+[profile.dev]
+debug-assertions = false
+panic = "abort"
+lto = "thin"
+strip = true
+
+[profile.release]
+debug-assertions = false
+panic = "abort"
+lto = "thin"
+strip = true

@@ -1,9 +1,12 @@
 [package]
-name = "data"
+name = "utils"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+
 [dependencies]
+data = { path = "../data" }
 
 [profile.dev]
 debug-assertions = false
