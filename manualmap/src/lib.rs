@@ -22,8 +22,6 @@ use data::{CloseHandle, GetCurrentProcess, GetProcessHeap, HeapFree, ImageBaseRe
 /// # Examples
 ///
 /// ```
-/// use std::fs;
-///
 /// let file_content = utils::read_file(r"c:\windows\system32\ntdll.dll")?;
 /// let file_content_ptr = file_content.as_ptr();
 /// let result = manualmap::get_pe_metadata(file_content_ptr, false);

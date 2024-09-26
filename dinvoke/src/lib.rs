@@ -52,8 +52,7 @@ struct Configuration
 
 /// Retrieves the base address of a module loaded in the current process.
 ///
-/// In case that the module can't be found in the current process, it will
-/// return 0.
+/// In case that the module can't be found it returns 0.
 ///
 /// # Examples
 ///
@@ -172,13 +171,13 @@ fn get_module_path(hmodule: usize) -> Result<String,u32>
     }
 }
 
-/// Retrieves the address of an exported function from the specified module.
+/// Retrieves the address of an exported function within the specified module.
 ///
 /// This functions is analogous to GetProcAddress from Win32. The exported 
 /// function's address is obtained by walking and parsing the EAT of the  
 /// specified module.
 ///
-/// In case that the function's address can't be retrieved, it will return 0.
+/// In case that the function's address can't be retrieved, it returns 0.
 ///
 /// # Examples
 ///
@@ -466,7 +465,7 @@ pub fn load_library_a(module: &str) -> usize {
 /// Dynamically calls NtQueryInformationProcess.
 ///
 /// It returns the NTSTATUS value.
-pub fn nt_query_information_process (handle: HANDLE, process_information_class: u32, process_information: *mut c_void, length: u32, return_length: *mut u32) -> i32 {
+pub fn nt_query_information_process(handle: HANDLE, process_information_class: u32, process_information: *mut c_void, length: u32, return_length: *mut u32) -> i32 {
     
     unsafe 
     {
@@ -485,7 +484,7 @@ pub fn nt_query_information_process (handle: HANDLE, process_information_class: 
 // Dynamically calls NtAllocateVirtualMemory.
 ///
 /// It returns the NTSTATUS value.
-pub fn nt_allocate_virtual_memory (handle: HANDLE, base_address: *mut PVOID, zero_bits: usize, size: *mut usize, allocation_type: u32, protection: u32) -> i32 {
+pub fn nt_allocate_virtual_memory(handle: HANDLE, base_address: *mut PVOID, zero_bits: usize, size: *mut usize, allocation_type: u32, protection: u32) -> i32 {
 
     unsafe 
     {
@@ -504,7 +503,7 @@ pub fn nt_allocate_virtual_memory (handle: HANDLE, base_address: *mut PVOID, zer
 /// Dynamically calls NtWriteVirtualMemory.
 ///
 /// It returns the NTSTATUS value.
-pub fn nt_write_virtual_memory (handle: HANDLE, base_address: PVOID, buffer: PVOID, size: usize, bytes_written: *mut usize) -> i32 {
+pub fn nt_write_virtual_memory(handle: HANDLE, base_address: PVOID, buffer: PVOID, size: usize, bytes_written: *mut usize) -> i32 {
 
     unsafe 
     {
@@ -524,7 +523,7 @@ pub fn nt_write_virtual_memory (handle: HANDLE, base_address: PVOID, buffer: PVO
 /// Dynamically calls NtProtectVirtualMemory.
 ///
 /// It returns the NTSTATUS value.
-pub fn nt_protect_virtual_memory (handle: HANDLE, base_address: *mut PVOID, size: *mut usize, new_protection: u32, old_protection: *mut u32) -> i32 {
+pub fn nt_protect_virtual_memory(handle: HANDLE, base_address: *mut PVOID, size: *mut usize, new_protection: u32, old_protection: *mut u32) -> i32 {
     
     unsafe 
     {
@@ -540,7 +539,7 @@ pub fn nt_protect_virtual_memory (handle: HANDLE, base_address: *mut PVOID, size
     } 
 }
 
-/// Dynamically calls NtProtectVirtualMemory.
+/// Dynamically calls RtlGetVersion.
 ///
 /// It returns the NTSTATUS value.
 pub fn rtl_get_version(version_information: *mut OSVERSIONINFOW) -> i32 {
@@ -648,10 +647,10 @@ pub fn ldr_get_procedure_address (module_handle: usize, function_name: &str, ord
 /// Dynamically calls an exported function from the specified module.
 ///
 /// This macro will use the dinvoke crate functions to obtain an exported
-/// function address of the specified module at runtime by walking process structures 
+/// function address within the specified module at runtime by walking process structures 
 /// and PE headers.
 ///
-/// it returns the same data type that the called function would return
+/// It returns the same data type that the called function would return
 /// using the 4th argument passed to the macro.
 /// 
 /// # Example - Dynamically calling LoadLibraryA
@@ -686,6 +685,25 @@ macro_rules! dynamic_invoke {
     };
 }
 
+/// Execute an indirect syscall without allocating additional private memory.
+/// 
+/// The first parameter expected by the macro is the name of the function whose syscall wants to be run. 
+/// The following parameters should be the arguments expected by the specified syscall.
+/// 
+/// The macro returns a pointer that "contains" the value returned by the called Nt function. That is, it returns
+/// directly the value of the rax register. The returned pointer (`*mut u8`) is just a generic used to store that value, 
+/// but it must be converted to the data type that the Nt function returns before using it in any way.
+/// 
+/// # Example - Calling NtDelayExecution() as indirect syscall
+/// 
+/// ```ignore
+/// let large = 0x8000000000000000 as u64; // Sleep indefinitely
+/// let large: *mut i64 = core::mem::transmute(&large);
+/// let alertable = false;
+/// let ntstatus: *mut u8 = dinvoke::indirect_syscall!("NtDelayExecution", alertable, large);
+/// utils::println!("ntstatus: {:x}", ntstatus as i32); // NTSTATUS can be represented as an i32 in Rust
+/// ```
+/// 
 #[macro_export]
 macro_rules! indirect_syscall {
 

@@ -3,12 +3,24 @@
 
 extern crate alloc;
 
+#[macro_use]
+extern crate litcrypt2;
+use_litcrypt!();
+
 use alloc::vec::Vec;
 use data::{CloseHandle, CreateFileW, GetProcessHeap, GetStdHandle, HeapAlloc, HeapFree, ReadFile, WriteConsoleW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, HANDLE, HEAP_ZERO_MEMORY, OPEN_EXISTING, STD_OUTPUT_HANDLE};
 use core::ptr::{self, copy_nonoverlapping, null_mut};
 use core::ffi::c_void;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 
+
+/// Reads the contents of a file.
+///
+/// # Examples
+///
+/// ```
+/// let file_content = utils::read_file(r"c:\windows\system32\ntdll.dll")?;
+/// ```
 pub fn read_file(file_path: &str) -> Result<Vec<u8>, String> 
 {
     unsafe 
@@ -27,7 +39,7 @@ pub fn read_file(file_path: &str) -> Result<Vec<u8>, String>
         );
     
         if handle.id == -1 {
-            return Err("Error opening the file.".to_string());
+            return Err(lc!("[x] Error opening the file."));
         }
     
         let mut buffer_size: usize = 4096;
@@ -37,7 +49,7 @@ pub fn read_file(file_path: &str) -> Result<Vec<u8>, String>
         if file_buffer.is_null() 
         {
             CloseHandle(handle);
-            return Err("Heap allocation failed".to_string());
+            return Err(lc!("[x] Heap allocation failed"));
         }
     
         let mut bytes_read: u32 = 0;
@@ -66,7 +78,7 @@ pub fn read_file(file_path: &str) -> Result<Vec<u8>, String>
                     {
                         HeapFree(process_heap, 0, file_buffer as *mut c_void); 
                         CloseHandle(handle);
-                        return Err("Error al reasignar memoria en el heap".to_string());
+                        return Err(lc!("[x] Heap allocation failed"));
                     }
     
                     copy_nonoverlapping(file_buffer as *mut u8, new_file_buffer as *mut u8, total_bytes_read);
@@ -84,7 +96,7 @@ pub fn read_file(file_path: &str) -> Result<Vec<u8>, String>
         CloseHandle(handle);
     
         if total_bytes_read == 0 {
-            return Err("Error reading file".to_string());
+            return Err(lc!("[x] Error reading the file."));
         }
         
         let new_file_buffer = HeapAlloc(process_heap, HEAP_ZERO_MEMORY, total_bytes_read);
@@ -101,7 +113,23 @@ pub fn read_file(file_path: &str) -> Result<Vec<u8>, String>
 }
 
 
-// This macro requires to import "core::fmt::Write;"
+/// This macro tries to reproduce the behavior of `std::println!()`.
+/// 
+/// The following lines should be added to use this macro:
+/// ```
+/// extern crate alloc;
+/// use core::fmt::Write;
+/// ```
+///
+/// # Examples
+///
+/// ```
+/// extern crate alloc;
+///
+/// utils::println!("Hello world!");
+/// utils::println!("Print hex value: {:x}", 2907isize);
+/// utils::println!("{}{}", "Concat", "Strings");
+/// ```
 #[macro_export]
 macro_rules!println {
     ($($arg:tt)*) => {
@@ -115,6 +143,7 @@ macro_rules!println {
     };
 }
 
+/// This function is not meant to be called directly, instead use `utils::println!()` macro.
 pub fn print_string(utf16_str: Vec<u16>) {
     unsafe {
         let h_stdout = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -129,44 +158,3 @@ pub fn print_string(utf16_str: Vec<u16>) {
         }
     } 
 }
-
-/* pub fn print_number_hex(number: usize) {
-    let mut string = String::new();
-    let _ = write!(string, "{:x}\n", number);  
-
-    let mut utf16: Vec<u16> = string.encode_utf16().collect();  
-    utf16.push(0);
-
-    unsafe {
-        let h_stdout = GetStdHandle(STD_OUTPUT_HANDLE);
-        if !h_stdout.is_null() {
-            WriteConsoleW(
-                h_stdout,
-                utf16.as_ptr(),
-                utf16.len() as u32,
-                ptr::null_mut(),
-                ptr::null_mut(),
-            );
-        }
-    } 
-}
-
-pub fn print_str_to_console(s: &str) {
-    let mut string = String::new();
-    let _ = write!(string, "{}\n", s);  
-
-    let utf16: Vec<u16> = string.encode_utf16().collect();  
-
-    unsafe {
-        let h_stdout = GetStdHandle(STD_OUTPUT_HANDLE);
-        if !h_stdout.is_null() {
-            WriteConsoleW(
-                h_stdout,
-                utf16.as_ptr(),
-                utf16.len() as u32,
-                ptr::null_mut(),
-                ptr::null_mut(),
-            );
-        }
-    } 
-} */
