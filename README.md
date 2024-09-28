@@ -1,6 +1,6 @@
 # DInvoke_nostd
 
-This branch contains the `no_std` version of `dinvoke_nostd`. DInvoke_nostd may be used for many purposes such as PE parsing, dynamic exported functions resolution, dynamically loading PEs at runtime and executiong indirect syscalls.
+This branch contains the `no_std` version of Dinvoke_rs. DInvoke_nostd may be used for many purposes such as PE parsing, dynamic exported functions resolution, dynamically loading PEs at runtime and executiong indirect syscalls.
 
 Features:
 * Dynamically resolve and invoke undocumented Windows APIs from Rust.
@@ -175,7 +175,7 @@ In order to pass arguments to this macro, the following considerations must be t
 * Floating-point and double-precision parameters are not currently supported. 
 * Any other data type must be passed as a pointer.
 
-The macro directly returns the value contained in the `rax` value after the called Nt function returns. This value is represented as a `*mut u8` that should be converted to the data type expected from the called function. For example, if the called Nt function returns an `NTSTATUS` the obtained `*mut u8` can be converted to `i32`, allowing to correctly interact with the returned `NTSTATUS`.
+The macro directly returns the value contained in the `rax` value after the called Nt function returns. This value is represented as a `*mut u8` that should be converted to the data type expected from the called function. For example, if the called Nt function returns an `NTSTATUS`, the obtained `*mut u8` should be converted to `i32` allowing to correctly interact with the returned `NTSTATUS`. This process is performed in the example above.
 
 ## Manual PE mapping
 In this example, Dinvoke_nostd is used to manually map a fresh copy of `ntdll.dll`, without any EDR hooks. Then that fresh ntdll.dll copy can be used to execute any desired function. 
@@ -220,7 +220,7 @@ pub extern "C" fn main()  {
 ```
 
 ## no_std features
-Since this crate is meant to be used in a `no_std` environment, two functions have been added to the ´utils´ crate to facilitate the experience of the developer:
+Since this crate is meant to be used in a `no_std` environment, two functions have been added to the `utils` crate to facilitate the experience of the developer:
 
 * The `read_file` function allows to read the binary content of an existing file, returning a `Vec<u8>` with such contents.
 * The `println!()` macro is a simplified version of the `std::println!()` macro, allowing to print to the standard output. 
