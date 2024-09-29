@@ -3,7 +3,7 @@
 This branch contains the `no_std` version of Dinvoke_rs. DInvoke_nostd may be used for many purposes such as PE parsing, dynamic exported functions resolution, dynamically loading PEs at runtime and executiong indirect syscalls.
 
 Features:
-* Dynamically resolve and invoke undocumented Windows APIs from Rust.
+* Dynamically resolve and invoke unmanaged code from Rust.
 * Indirect syscalls. **x64 only**
 * Manually map PE modules from disk or directly from memory.
 * PE headers parsing.
