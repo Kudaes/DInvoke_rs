@@ -28,7 +28,7 @@ Import this crate into your project by adding the following line to your `cargo.
 
 ```rust
 [dependencies]
-dinvoke_nostd = "0.1.0"
+dinvoke_nostd = "0.1.1"
 ```
 
 It is required to statically link the VCRuntime to use this crate. To do so, add the following line to `cargo.toml`:
