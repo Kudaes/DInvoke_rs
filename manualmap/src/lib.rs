@@ -564,7 +564,7 @@ pub fn rewrite_module_iat(pe_info: &PeMetadata, image_ptr: *mut c_void) -> Resul
     }
 }
 
-// This method is reponsible of cleaning IOCs that may reveal the pressence of a 
+// This method is reponsible for cleaning IOCs that may reveal the pressence of a 
 // manually mapped PE in a private memory region. It will remove PE magic bytes,
 // DOS header and DOS stub.
 fn clean_dos_header (image_ptr: *mut c_void) 

@@ -2328,7 +2328,7 @@ pub fn nt_read_virtual_memory (handle: HANDLE, base_address: PVOID, buffer: PVOI
 /// Dynamically calls an exported function from the specified module.
 ///
 /// This macro will use the dinvoke crate functions to obtain an exported
-/// function address of the specified module in the runtime by walking process structures 
+/// function address of the specified module at runtime by walking process structures 
 /// and PE headers.
 ///
 /// In case that this macro is used to call a dll entry point (DllMain), it will return true
@@ -2353,11 +2353,11 @@ pub fn nt_read_virtual_memory (handle: HANDLE, base_address: PVOID, buffer: PVOI
 /// let name = CString::new("ntdll.dll").expect("CString::new failed");
 /// let module_name = PSTR{0: name.as_ptr() as *mut u8};
 /// //dinvoke::dynamic_invoke(usize,&str,<function_type>,Option<return_type>,[arguments])
-/// dinvoke::dynamic_invoke(a.1, "LoadLibraryA", function_ptr, ret, module_name);
+/// dinvoke::dynamic_invoke!(kernel32.1, "LoadLibraryA", function_ptr, ret, module_name);
 ///
 /// match ret {
-///     Some(x) => if x.0 == 0 {println!("ntdll base address is 0x{:X}",x.0);},
-///     None => println!("Error calling LdrGetProcedureAddress"),
+///     Some(x) => {println!("ntdll base address is 0x{:X}",x.0);},
+///     None => println!("Error calling LoadLibraryA"),
 /// }
 /// ```
 /// # Example - Dynamically calling with referenced arguments

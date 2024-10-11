@@ -10,7 +10,7 @@ strip = true
 [dependencies]
 data = { path = "../data" }
 libc = "0.2.101"
-litcrypt2 = "0.1.2"
+litcrypt2 = "=0.1.2"
 winapi = {version = "0.3.9", features = ["psapi"]}
 nanorand = {version = "0.7.0", optional = true}
 
