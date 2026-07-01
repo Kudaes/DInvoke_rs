@@ -535,34 +535,45 @@ pub fn get_function_address(module_base_address: usize, function: &str) -> usize
 
     unsafe
     {
-        
         let mut function_ptr: *mut i32 = ptr::null_mut();
+
+        if module_base_address == 0 {
+            return 0;
+        }
+
         let pe_header = *((module_base_address + 0x3C) as *mut i32);
         let opt_header: usize = module_base_address + (pe_header as usize) + 0x18;
         let magic = *(opt_header as *mut i16);
+
         let p_export: usize;
 
         if magic == 0x010b {
+            // PE32
             p_export = opt_header + 0x60;
         } else {
+            // PE32+
             p_export = opt_header + 0x70;
         }
 
-        let export_rva = *(p_export as *mut i32);
-        let ordinal_base = *((module_base_address + export_rva as usize + 0x10) as *mut i32);
-        let number_of_names = *((module_base_address + export_rva as usize + 0x18) as *mut i32);
-        let functions_rva = *((module_base_address + export_rva as usize + 0x1C) as *mut i32);
-        let names_rva = *((module_base_address + export_rva as usize + 0x20) as *mut i32);
-        let ordinals_rva = *((module_base_address + export_rva as usize + 0x24) as *mut i32);
+        let export_rva = *(p_export as *mut u32) as usize;
+        let export_size = *((p_export + 4) as *mut u32) as usize;
+
+        if export_rva == 0 || export_size == 0 {
+            return 0;
+        }
+
+        let number_of_names = *((module_base_address + export_rva + 0x18) as *mut u32) as usize;
+        let functions_rva = *((module_base_address + export_rva + 0x1C) as *mut u32) as usize;
+        let names_rva = *((module_base_address + export_rva + 0x20) as *mut u32) as usize;
+        let ordinals_rva = *((module_base_address + export_rva + 0x24) as *mut u32) as usize;
 
         for x in 0..number_of_names 
         {
-
-            let address = *((module_base_address + names_rva as usize + x as usize * 4) as *mut i32);
-            let mut function_name_ptr = (module_base_address + address as usize) as *mut u8;
+            let address = *((module_base_address + names_rva + x * 4) as *mut u32) as usize;
+            let mut function_name_ptr = (module_base_address + address) as *mut u8;
             let mut function_name: String = "".to_string();
 
-            while *function_name_ptr as char != '\0' // null byte
+            while *function_name_ptr as char != '\0'
             { 
                 function_name.push(*function_name_ptr as char);
                 function_name_ptr = function_name_ptr.add(1);
@@ -570,15 +581,29 @@ pub fn get_function_address(module_base_address: usize, function: &str) -> usize
 
             if function_name.to_lowercase() == function.to_lowercase() 
             {
-                let function_ordinal = *((module_base_address + ordinals_rva as usize + x as usize * 2) as *mut i16) as i32 + ordinal_base;
-                let function_rva = *(((module_base_address + functions_rva as usize + (4 * (function_ordinal - ordinal_base)) as usize )) as *mut i32);
-                function_ptr = (module_base_address + function_rva as usize) as *mut i32;
 
-                function_ptr = get_forward_address(function_ptr as *mut u8) as *mut i32;
-                
+                let function_ordinal_index =
+                    *((module_base_address + ordinals_rva + x * 2) as *mut u16) as usize;
+
+                let function_rva =
+                    *((module_base_address + functions_rva + function_ordinal_index * 4) as *mut u32) as usize;
+
+                if function_rva == 0 {
+                    break;
+                }
+
+                function_ptr = (module_base_address + function_rva) as *mut i32;
+
+                let is_forwarded =
+                    function_rva >= export_rva &&
+                    function_rva < export_rva + export_size;
+
+                if is_forwarded {
+                    function_ptr = get_forward_address(function_ptr as *mut u8) as *mut i32;
+                }
+
                 break;
             }
-
         }
 
         let mut ret: usize = 0;
@@ -588,7 +613,6 @@ pub fn get_function_address(module_base_address: usize, function: &str) -> usize
         }
     
         ret
-
     }
 }
 
@@ -922,7 +946,7 @@ pub fn find_syscall_address(address: usize) -> usize
 {
     unsafe
     {
-        let stub: [u8;2] = [ 0x0F, 0x05 ];
+        let stub: [u8;2] = [ 0x0F, 0x05 ]; // int 2E works as well ->  0xCD, 0x2E
         let mut ptr:*mut u8 = address as *mut u8;
         for _i in 0..23
         {
